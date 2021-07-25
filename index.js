@@ -241,15 +241,15 @@ async function scrapeData() {
     const tasks = metadata.queries.map(query => fetchQuery(query, metadata.info.GeometryType))
     const result = await Promise.all(tasks);
     await terminal.addLine({type: 'message', value: 'Done fetching data! Parsing to CSV'});
-    // const data = Papa.unparse({data: result.flat(1), fields: metadata.info.Fields});
-    // const csv = new Blob(['\ufeff', data]);
-    // const download = document.createElement("a")
-    // download.href = URL.createObjectURL(csv)
-    // download.download = `${metadata.info.Name}.csv`
+    const data = Papa.unparse({data: result.flat(1), fields: metadata.info.Fields});
+    const csv = new Blob(['\ufeff', data]);
+    const download = document.createElement("a")
+    download.href = URL.createObjectURL(csv)
+    download.download = `${metadata.info.Name}.csv`
 
-    // document.body.appendChild(download)
-    // download.click()
-    // document.body.removeChild(download)
+    document.body.appendChild(download)
+    download.click()
+    document.body.removeChild(download)
 }
 
 function start() {
