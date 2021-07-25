@@ -40,6 +40,8 @@ class CustomTerminal extends Termynal {
         input.setAttribute('type', 'text');
         input.setAttribute('rows', '1');
         input.addEventListener('keydown', handler);
+        if (window.navigator.userAgent.indexOf('Firefox') != -1)
+            input.setAttribute('style', 'margin: 0px 0px -5px 0px;');
         line.appendChild(input);
         this.container.appendChild(line);
     }
