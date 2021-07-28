@@ -17,7 +17,6 @@ class CustomTerminal extends Termynal {
             await this.handleLine(line);
             line.removeAttribute(`${this.pfx}-cursor`);
         }
-        document.querySelector('#url').focus();
     }
 
     async handleLine(element) {
@@ -52,6 +51,7 @@ class CustomTerminal extends Termynal {
             input.setAttribute('style', 'margin: 0px 0px -5px 0px;');
         line.appendChild(input);
         this.container.appendChild(line);
+        document.querySelector(`#${childId}`).focus();
     }
 
     async addLine(line) {
