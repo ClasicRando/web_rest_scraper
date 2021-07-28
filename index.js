@@ -80,7 +80,7 @@ class CustomTerminal extends Termynal {
      * of the new 'user-input' type. This type requires some new properties:
      *      1. childId - id used to find the input element
      *      2. handler - dynamic js code that is used for the keydown event
-     * @param {Object} line 
+     * @param {object} line 
      */
     async addLine(line) {
         document.querySelector('#terminal').lastElementChild.removeAttribute(`${this.pfx}-cursor`);
@@ -98,7 +98,7 @@ class CustomTerminal extends Termynal {
      * 
      * TODO
      * - simplify code to have this function call the addLine function for each entry in the array
-     * @param {Object[]} lines 
+     * @param {object[]} lines 
      */
     async addLines(lines) {
         for (const [i, line] of lines.entries()) {
@@ -131,7 +131,7 @@ function maxMinQuery(oidField) {
 /**
  * Obtain metadata JSON object when provided the base url of an ArcGIS REST Service
  * @param {string} url 
- * @returns {Object} JSON object with values describing Service and providing queries for scrpaing
+ * @returns {object} JSON object with values describing Service and providing queries for scrpaing
  */
 async function getMetadata(url) {
     const countQuery = '/query?where=1%3D1&returnCountOnly=true&f=json';
@@ -231,10 +231,18 @@ async function getMetadata(url) {
     };
 }
 
+/**
+ * Fetch query features then map the data to an array
+ * @param {string} query 
+ * @param {string} geoType 
+ * @returns {object[][]} nested array of objects representing rows of records
+ */
 async function fetchQuery(query, geoType) {
     let invalidResponse = true;
     let tryNumber = 1;
     let json;
+    // Try query multiple times if error is thrown, response status is an error
+    // code or if the json response indicates an error occured
     while (invalidResponse) {
         try {
             const response = await fetch(query);
@@ -255,17 +263,21 @@ async function fetchQuery(query, geoType) {
             invalidResponse = true;
             tryNumber++;
         }
+        // Current max number of tries is 10. After that an error is thrown
         if (tryNumber > 10)
             throw Error(`Too many tries to fetch query (${query})`);
     }
-    return json.features.map((feature,i) => {
+    return json.features.map(feature => {
         let geometry = [];
+        // extract the feature's geometry into an array that is spread into the resulting array
         if (geoType === 'esriGeometryPoint')
             geometry = Object.values((feature.geometry || {x: '', y: ''})).map(value => typeof(value) === "string" ? value.trim(): value);
         else if (geoType === 'esriGeometryMultipoint')
             geometry = [JSON.stringify(((feature.geometry || {points: []}).points || [])).trim()];
         else if (geoType === 'esriGeometryPolygon')
             geometry = [JSON.stringify(((feature.geometry || {rings: []}).rings || [])).trim()];
+        // spread all feature attribute values into an array (with whitespace trimmed from string
+        // values) with the geometry appended to the end
         return [
             ...Object.values(feature.attributes).map(value => typeof(value) === "string" ? value.trim(): value),
             ...geometry
@@ -273,6 +285,9 @@ async function fetchQuery(query, geoType) {
     });
 }
 
+/**
+ * Fetchs service metadata then displays the results onto the terminal widget
+ */
 async function scrapeMetadata() {
     terminal.addLine({type: 'message', value: 'Starting data scrape'});
     terminal.addLine({type: 'message', value: 'Collecting Metadata'});
@@ -307,11 +322,20 @@ async function scrapeMetadata() {
     )
 }
 
+/**
+ * Ends the user interaction with the terminal due to user input or error
+ * 
+ * Displays a message provided to the function then added line noting end of session
+ * @param {string} message 
+ */
 async function exitTerminal(message) {
     await terminal.addLine({type: 'message', value: message});
     await terminal.addLine({type: 'message', value: 'Exiting Terminal'});
 }
 
+/**
+ * Executes all queries from the service metadata and parses all the features into a CSV
+ */
 async function scrapeData() {
     await terminal.addLine({type: 'message', value: 'Starting scrape'});
     const tasks = metadata.queries.map(query => fetchQuery(query, metadata.info.GeometryType))
@@ -328,6 +352,9 @@ async function scrapeData() {
     document.body.removeChild(download)
 }
 
+/**
+ * Function called when HTML body is loaded. Adds terminal element and builds widget
+ */
 function start() {
     document.body.innerHTML += '<div id="terminal"></div>';
     terminal = new CustomTerminal(
