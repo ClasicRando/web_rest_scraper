@@ -169,8 +169,8 @@ async function getMetadata(url) {
     // TODO
     // - Add spatial reference overriding to default from service or specified spatial reference
     const geoText = serverType !== 'TABLE' ? `&geometryType=${geoType}&outSR=4269` : '';
-    // Get all field names while filtering out any geometry field or field named SHAPE. Any field that
-    // follows those criteria are not required. Could add ability to keep those fields later
+    // Get all field names while filtering out any geometry field or field named SHAPE. Any field
+    // that follows those criteria are not required. Could add ability to keep those fields later
     let fields = json.fields.filter(field =>
         field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
     ).map(field =>
@@ -188,18 +188,25 @@ async function getMetadata(url) {
     const oidField = json.fields.find(field =>
         field.type === 'esriFieldTypeOID'
     ).name || '';
-    if (stats && oidField.length > 0 && !pagination) {
+    // If pagination is not supported, statistics is supported and the service has an OID field,
+    // then get the max and min OID values which are used to generate scraping queries
+    if (!pagination && stats && oidField.length > 0) {
         resposne = await fetch(url + maxMinQuery(oidField));
         json = await response.json();
         const attributes = json.features[0].attributes;
         maxMinOid = [attributes.maxValue, attributes.minValue];
         incOid = maxMinOid[0] - maxMinOid[1] + 1 === sourceCount;
     }
+    // TODO
+    // - For this section, string queries should be replaced with URLSearchParams
+    // If pagination is supported then generate queries based upon result offsets and record
+    // counts per query
     if (pagination) {
         queries = [...Array(Math.ceil(sourceCount/maxQueryCount)).keys()].map(i => 
             url + `/query?where=1+%3D+1&resultOffset=${i * maxQueryCount}&resultRecordCount=${maxQueryCount}${geoText}&outFields=*&f=json`
         );
     }
+    // If oid field is provided then generate queries using OID ranges
     else if (oidField.length > 0) {
         queries = [...Array(Math.ceil((maxMinOid[0] - maxMinOid[1] + 1) / maxQueryCount)).keys()].map(i => 
             url + `/query?where=${oidField}+>%3D+${min_oid}+and+${oidField}+<%3D+${maxMinOid[1] + ((i + 1) * maxQueryCount) - 1}${geoText}&outFields=*&f=json`
