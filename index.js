@@ -19,22 +19,32 @@ class CustomTerminal extends Termynal {
         }
     }
 
+    /**
+     * Handles adding lines to the termynal widget
+     * Exposes line adding operation to initialization and line appending
+     * @param {Node} element 
+     */
     async handleLine(element) {
         const type = element.getAttribute(this.pfx);
         const delay = element.getAttribute(`${this.pfx}-delay`) || this.lineDelay;
-        if (type == 'input') {
-            element.setAttribute(`${this.pfx}-cursor`, this.cursor);
-            await this.type(element);
-            await this._wait(delay);
-        } else if (type == 'progress') {
-            await this.progress(element);
-            await this._wait(delay);
-        } else if (type == 'user-input') {
-            this.userInput(element);
-            await this._wait(delay);
-        } else {
-            this.container.appendChild(element);
-            await this._wait(delay);
+        switch(type) {
+            case 'input':
+                element.setAttribute(`${this.pfx}-cursor`, this.cursor);
+                await this.type(element);
+                await this._wait(delay);
+                break;
+            case 'progress':
+                await this.progress(element);
+                await this._wait(delay);
+                break;
+            case 'user-input':
+                this.userInput(element);
+                await this._wait(delay);
+                break;
+            default:
+                this.container.appendChild(element);
+                await this._wait(delay);
+                break;
         }
     }
 
