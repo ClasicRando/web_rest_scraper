@@ -183,12 +183,11 @@ async function getMetadata(url) {
         fields = [...fields, 'POINTS'];
     else if (geoType === 'esriGeometryPolygon')
         fields = [...fields, 'RINGS'];
-    oidFields = json.fields.filter(field =>
+    // Find first field that is of type OID and get the name. If nothing found or name is not an
+    // attribute of the find result then default to empty string
+    const oidField = json.fields.find(field =>
         field.type === 'esriFieldTypeOID'
-    ).map(field =>
-        field.name
-    );
-    const oidField = oidFields.length > 0 ? oidFields[0] : '';
+    ).name || '';
     if (stats && oidField.length > 0 && !pagination) {
         resposne = await fetch(url + maxMinQuery(oidField));
         json = await response.json();
