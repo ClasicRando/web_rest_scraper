@@ -21,6 +21,7 @@ class CustomTerminal extends Termynal {
 
     /**
      * Handles adding lines to the termynal widget
+     * 
      * Exposes line adding operation to initialization and line appending
      * @param {Node} element 
      */
@@ -48,6 +49,12 @@ class CustomTerminal extends Termynal {
         }
     }
 
+    /**
+     * Add an element within the line to accept user input
+     * 
+     * Uses some of the line attributes to populate child attributes
+     * @param {Node} line
+     */
     userInput(line) {
         const childId = line.getAttribute(`${this.pfx}-childId`);
         const handler = new Function('event', line.getAttribute(`${this.pfx}-handler`));
@@ -57,6 +64,8 @@ class CustomTerminal extends Termynal {
         input.setAttribute('type', 'text');
         input.setAttribute('rows', '1');
         input.addEventListener('keydown', handler);
+        // For some reason, in Firefox the input does not line up with the prompt text
+        // so I just hardcoded a different style for that case
         if (window.navigator.userAgent.indexOf('Firefox') != -1)
             input.setAttribute('style', 'margin: 0px 0px -5px 0px;');
         line.appendChild(input);
@@ -64,6 +73,15 @@ class CustomTerminal extends Termynal {
         document.querySelector(`#${childId}`).focus();
     }
 
+    /**
+     * Add a single line to the terminal based upon the object attributes
+     * 
+     * Uses the same object style as the termynal project's 'lineData' property with the exception
+     * of the new 'user-input' type. This type requires some new properties:
+     *      1. childId - id used to find the input element
+     *      2. handler - dynamic js code that is used for the keydown event
+     * @param {Object} line 
+     */
     async addLine(line) {
         document.querySelector('#terminal').lastElementChild.removeAttribute(`${this.pfx}-cursor`);
         const div = document.createElement('div');
@@ -72,6 +90,16 @@ class CustomTerminal extends Termynal {
         window.scrollTo(0,document.body.scrollHeight);
     }
 
+    /**
+     * Add multiple lines to the terminal
+     * 
+     * Similar approach to the single line adding but allows for a list of objects to be passed
+     * Treats the list as having the first entry as a header and the rest as indented values
+     * 
+     * TODO
+     * - simplify code to have this function call the addLine function for each entry in the array
+     * @param {Object[]} lines 
+     */
     async addLines(lines) {
         for (const [i, line] of lines.entries()) {
             document.querySelector('#terminal').lastElementChild.removeAttribute(`${this.pfx}-cursor`);
@@ -84,6 +112,14 @@ class CustomTerminal extends Termynal {
     }
 }
 
+/**
+ * Get the query portion of a URL to get the max and min value of a specified field
+ * 
+ * TODO
+ * - implement URLSearchParams rather than an HTML encoded string
+ * @param {string} oidField 
+ * @returns {string} query string interpolated with field name
+ */
 function maxMinQuery(oidField) {
     return `/query?outStatistics=%5B%0D%0A+%7B%0D%0A++++"statisticType"%3A+"max"%2C%0D%0A++++"
     onStatisticField"%3A+"${oid_field}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"maxValue"
@@ -92,6 +128,11 @@ function maxMinQuery(oidField) {
     %0D%0A++%7D%0D%0A%5D&f=json`
 }
 
+/**
+ * Obtain metadata JSON object when provided the base url of an ArcGIS REST Service
+ * @param {string} url 
+ * @returns {Object} JSON object with values describing Service and providing queries for scrpaing
+ */
 async function getMetadata(url) {
     const countQuery = '/query?where=1%3D1&returnCountOnly=true&f=json';
     const fieldQuery = '?f=json';
@@ -101,10 +142,12 @@ async function getMetadata(url) {
     let incOid = false;
     let queries = []
 
+    // Get count from service when quering all features
     let response = await fetch(url + countQuery);
     let json = await response.json();
     const sourceCount = json.count ? json.count : -1;
 
+    // Get JSON data about service. Provides information for scrpaing
     response = await fetch(url + fieldQuery);
     json = await response.json();
     const advancedQuery = json.advancedQueryCapabilities || {};
@@ -112,21 +155,28 @@ async function getMetadata(url) {
     const name = json.name;
     const maxRecordCount = json.maxRecordCount;
     const maxQueryCount = maxRecordCount > 10000 ? 10000 : maxRecordCount;
+    // If 'advancedQueryCapabilities' is a key in the base JSON response then get the suppored
+    // features from that object. If not then try to obtain them from the base JSON
     if (Object.keys(advancedQuery).length > 0) {
         pagination = advancedQuery.supportsPagination || false;
         stats = advancedQuery.supportsStatistics || false;
-    }
-    else {
+    } else {
         pagination = json.supportsPagination || false;
         stats = json.supportsStatistics || false;
     }
     const geoType = json.geometryType || '';
+    // If service is not a TABLE then include geometry parsing using the NAD83 spatial reference
+    // TODO
+    // - Add spatial reference overriding to default from service or specified spatial reference
     const geoText = serverType !== 'TABLE' ? `&geometryType=${geoType}&outSR=4269` : '';
+    // Get all field names while filtering out any geometry field or field named SHAPE. Any field that
+    // follows those criteria are not required. Could add ability to keep those fields later
     let fields = json.fields.filter(field =>
         field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
     ).map(field =>
         field.name
     );
+    // Depending upon the geometry type, fields are added to the output fields list
     if (geoType === 'esriGeometryPoint')
         fields = [...fields, 'X', 'Y'];
     else if (geoType === 'esriGeometryMultipoint')
