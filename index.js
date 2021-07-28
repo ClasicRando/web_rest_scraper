@@ -1,11 +1,19 @@
 let terminal;
 let metadata;
 
+/**
+ * Extends the Termynal widget provide by the termynal project
+ * Adds the ability to accpet user input and add new lines after initialization
+ */
 class CustomTerminal extends Termynal {
+    /**
+     * Overrides the start function from the parent class
+     * Delegates line element handling to an async member function
+     */
     async start() {
         await this._wait(this.startDelay);
 
-        for (const [index,line] of this.lines.entries()) {
+        for (const line of this.lines) {
             await this.handleLine(line);
             line.removeAttribute(`${this.pfx}-cursor`);
         }
