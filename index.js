@@ -1,11 +1,17 @@
 let terminal;
 let metadata;
+let progressLines = ['|', '/', '-', '\\'];
+let currentProgressLine = 0;
 
 /**
  * Extends the Termynal widget provide by the termynal project
  * Adds the ability to accpet user input and add new lines after initialization
  */
 class CustomTerminal extends Termynal {
+
+    constructor(container, options) {
+        super(container, options);
+    }
     /**
      * Overrides the start function from the parent class
      * Delegates line element handling to an async member function
@@ -42,11 +48,54 @@ class CustomTerminal extends Termynal {
                 this.userInput(element);
                 await this._wait(delay);
                 break;
+            case 'task-progress':
+                this.taskProgress(element);
+                break;
             default:
                 this.container.appendChild(element);
                 await this._wait(delay);
                 break;
         }
+    }
+
+    /**
+     * 
+     * @param {Node} line 
+     */
+    taskProgress(line) {
+        line.textContent = ' 0%'
+        const id = line.getAttribute(`${this.pfx}-id`);
+        line.setAttribute('id', id);
+        this.lineProgressTimer = setInterval(this.updateTaskProgressLine, 250, id);
+        this.container.appendChild(line);
+    }
+
+    updateTaskProgressLine(id) {
+        currentProgressLine++;
+        if (currentProgressLine > 3)
+            currentProgressLine = 0;
+        const progressBar = document.querySelector(`#${id}`);
+        progressBar.textContent = `${progressBar.textContent.replace(/ [-|/\\]$/, '')} ${progressLines[currentProgressLine]}`;
+    }
+
+    doneTaskProgress() {
+        clearInterval(this.lineProgressTimer);
+    }
+
+    /**
+     * 
+     * @param {string} id
+     * @param {number} percent 
+     */
+    updateProgress(id, percent) {
+        const progressBar = document.querySelector(`#${id}`);
+        const progressLength = progressBar.getAttribute(`${this.pfx}-progressLength`)
+            || this.progressLength;
+        const progressChar = progressBar.getAttribute(`${this.pfx}-progressChar`)
+            || this.progressChar;
+        const chars = progressChar.repeat(progressLength);
+        const i = Math.round(percent * chars.length);
+        progressBar.textContent = `${chars.slice(0, i)} ${Math.round(percent * 100)}%`;
     }
 
     /**
@@ -131,7 +180,7 @@ function maxMinQuery(oidField) {
 /**
  * Obtain metadata JSON object when provided the base url of an ArcGIS REST Service
  * @param {string} url 
- * @returns {object} JSON object with values describing Service and providing queries for scrpaing
+ * @returns {Promise<object>} JSON object with values describing Service and providing queries for scrpaing
  */
 async function getMetadata(url) {
     const countQuery = '/query?where=1%3D1&returnCountOnly=true&f=json';
@@ -151,7 +200,7 @@ async function getMetadata(url) {
     response = await fetch(url + fieldQuery);
     json = await response.json();
     const advancedQuery = json.advancedQueryCapabilities || {};
-    const serverType = json.type;
+    const serverType = json.type.toUpperCase();
     const name = json.name;
     const maxRecordCount = json.maxRecordCount;
     const maxQueryCount = maxRecordCount > 10000 ? 10000 : maxRecordCount;
@@ -175,6 +224,11 @@ async function getMetadata(url) {
         field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
     ).map(field =>
         field.name
+    );
+    let fieldsLabels = json.fields.filter(field =>
+        field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
+    ).map(field =>
+        `${field.name}(type=${field.type})`
     );
     // Depending upon the geometry type, fields are added to the output fields list
     if (geoType === 'esriGeometryPoint')
@@ -202,18 +256,47 @@ async function getMetadata(url) {
     // If pagination is supported then generate queries based upon result offsets and record
     // counts per query
     if (pagination) {
-        queries = [...Array(Math.ceil(sourceCount/maxQueryCount)).keys()].map(i => 
-            url + `/query?where=1+%3D+1&resultOffset=${i * maxQueryCount}&resultRecordCount=${maxQueryCount}${geoText}&outFields=*&f=json`
-        );
+        queries = [...Array(Math.ceil(sourceCount/maxQueryCount)).keys()].map(i => {
+            const params = new URLSearchParams(
+                {
+                    'where': '1 = 1',
+                    'resultOffset': i * maxQueryCount,
+                    'resultRecordCount': maxQueryCount,
+                    'outFields': '*',
+                    'f': 'json'
+                }
+            );
+            if (serverType !== 'TABLE') {
+                params.append('geometryType',geoType);
+                params.append('outSR','4269');
+            }
+            return params;
+        });
+        // url + `/query?where=1+%3D+1&resultOffset=${i * maxQueryCount}&resultRecordCount=${maxQueryCount}${geoText}&outFields=*&f=json`
     }
     // If oid field is provided then generate queries using OID ranges
     else if (oidField.length > 0) {
-        queries = [...Array(Math.ceil((maxMinOid[0] - maxMinOid[1] + 1) / maxQueryCount)).keys()].map(i => 
-            url + `/query?where=${oidField}+>%3D+${min_oid}+and+${oidField}+<%3D+${maxMinOid[1] + ((i + 1) * maxQueryCount) - 1}${geoText}&outFields=*&f=json`
-        );
+        queries = [...Array(Math.ceil((maxMinOid[0] - maxMinOid[1] + 1) / maxQueryCount)).keys()].map(i => {
+            let minOid = maxMinOid[1] + (i * maxQueryCount);
+            const params = new URLSearchParams(
+                {
+                    'where': `${oidField} >= ${minOid} and ${oidField} <= ${minOid + maxQueryCount - 1}`,
+                    'outFields': '*',
+                    'f': 'json'
+                }
+            );
+            if (serverType !== 'TABLE') {
+                params.append('geometryType',geoType);
+                params.append('outSR','4269');
+            }
+            return params;
+        });
+        // url + `/query?where=${oidField}+>%3D+${min_oid}+and+${oidField}+<%3D+${maxMinOid[1] + ((i + 1) * maxQueryCount) - 1}${geoText}&outFields=*&f=json`
     }
     return {
         'queries': queries,
+        'url': url,
+        'Fields': fields,
         'info': {
             'Name': name,
             'SourceCount': sourceCount,
@@ -223,21 +306,21 @@ async function getMetadata(url) {
             'Stats': stats,
             'ServerType': serverType,
             'GeometryType': geoType,
-            'Fields': fields,
+            'Field Names': fieldsLabels,
             'OidField': oidField,
-            'MaxMinOid': maxMinOid,
-            'IncrementalOid': incOid
+            'MaxMinOid': pagination ? null : maxMinOid,
+            'IncrementalOid': pagination ? null : incOid
         }
     };
 }
 
 /**
  * Fetch query features then map the data to an array
- * @param {string} query 
- * @param {string} geoType 
- * @returns {object[][]} nested array of objects representing rows of records
+ * @param {URL} url 
+ * @returns {Promise<object[][]>} nested array of objects representing rows of records
  */
-async function fetchQuery(query, geoType) {
+async function fetchQuery(url) {
+    let geoType = url.searchParams.get('geometryType') || '';
     let invalidResponse = true;
     let tryNumber = 1;
     let json;
@@ -245,7 +328,7 @@ async function fetchQuery(query, geoType) {
     // code or if the json response indicates an error occured
     while (invalidResponse) {
         try {
-            const response = await fetch(query);
+            const response = await fetch(url);
             invalidResponse = !response.ok;
             json = await response.json();
             if (!Object.keys(json).includes('features')) {
@@ -264,8 +347,10 @@ async function fetchQuery(query, geoType) {
             tryNumber++;
         }
         // Current max number of tries is 10. After that an error is thrown
-        if (tryNumber > 10)
-            throw Error(`Too many tries to fetch query (${query})`);
+        if (tryNumber > 10) {
+            throw Error(`Too many tries to fetch query (${url.href})`);
+            return [[]];
+        }
     }
     return json.features.map(feature => {
         let geometry = [];
@@ -295,7 +380,9 @@ async function scrapeMetadata() {
     metadata = await getMetadata(url);
     terminal.lineDelay = 50;
     for (const [key, value] of Object.entries(metadata.info)) {
-        if (Array.isArray(value))
+        if (value === null)
+            continue;
+        else if (Array.isArray(value))
             await terminal.addLines([key, ...value].map(text => { return {type: 'message', value: text}}));
         else
             await terminal.addLine({type: 'message', value: `${key}: ${value}`});
@@ -329,7 +416,8 @@ async function scrapeMetadata() {
  * @param {string} message 
  */
 async function exitTerminal(message) {
-    await terminal.addLine({type: 'message', value: message});
+    if (message.length > 0)
+        await terminal.addLine({type: 'message', value: message});
     await terminal.addLine({type: 'message', value: 'Exiting Terminal'});
 }
 
@@ -338,18 +426,41 @@ async function exitTerminal(message) {
  */
 async function scrapeData() {
     await terminal.addLine({type: 'message', value: 'Starting scrape'});
-    const tasks = metadata.queries.map(query => fetchQuery(query, metadata.info.GeometryType))
-    const result = await Promise.all(tasks);
+    await terminal.addLine(
+        {
+            type: 'task-progress',
+            id: 'scrapeProgress',
+            progressChar: '█',
+            progressLength: 40
+        }
+    );
+    const queryCount = metadata.queries.length;
+    let queriesComplete = 0;
+    const tasks = metadata.queries.map(query => {
+        const url = new URL(metadata.url + '/query')
+        url.search = query.toString();
+        return fetchQuery(url)
+    });
+    const result = await tasks.reduce(async (previous, nextTask) => {
+        const accum = await previous;
+        const result = await nextTask;
+        queriesComplete++;
+        console.log(`Done ${queriesComplete}/${queryCount}`);
+        terminal.updateProgress('scrapeProgress', queriesComplete / queryCount);
+        return [...accum, ...result];
+    }, Promise.resolve([]));
+    terminal.doneTaskProgress();
+    // const result = await Promise.all(tasks);
     await terminal.addLine({type: 'message', value: 'Done fetching data! Parsing to CSV'});
-    const data = Papa.unparse({data: result.flat(1), fields: metadata.info.Fields});
-    const csv = new Blob(['\ufeff', data]);
-    const download = document.createElement("a")
-    download.href = URL.createObjectURL(csv)
-    download.download = `${metadata.info.Name}.csv`
+    // const data = Papa.unparse({data: result, fields: metadata.fields});
+    // const csv = new Blob(['\ufeff', data]);
+    // const download = document.createElement("a")
+    // download.href = URL.createObjectURL(csv)
+    // download.download = `${metadata.info.Name}.csv`
 
-    document.body.appendChild(download)
-    download.click()
-    document.body.removeChild(download)
+    // document.body.appendChild(download)
+    // download.click()
+    // document.body.removeChild(download)
 }
 
 /**
