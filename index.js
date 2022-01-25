@@ -113,7 +113,14 @@ class CustomTerminal extends Termynal {
 }
 
 /**
+ * Perform fetch and json extraction for the provided url
+ * 
+ * Handles errors during fetch and json async functions. In the event an error is thrown or the response is not ok, an object
+ * is returned with a success flag of false and a payload of either the error or the response text. If nothing does wrong,
+ * an object with a success flag of true and a pyalod of the response json is returned.
+ * 
  * @param {string} url
+ * @returns {Promise<{success: boolean, payload: any}>}
  */
 async function fetchJson(url) {
     let response = null;
@@ -180,7 +187,6 @@ async function getMetadata(url) {
 
     // Get count from service when quering all features
     const countResponse = await fetchJson(url + countQuery);
-    // const countJson = await countResponse.json();
     if (!countResponse.success) {
         return {error: countResponse.payload};
     }
@@ -188,7 +194,6 @@ async function getMetadata(url) {
 
     // Get JSON data about service. Provides information for scrpaing
     const metaResponse = await fetchJson(url + fieldQuery);
-    // const metaJson = await metaResponse.json();
     if (!metaResponse.success) {
         return {error: metaResponse.payload};
     }
@@ -238,11 +243,12 @@ async function getMetadata(url) {
         if (!maxMinResposne.success) {
             return {error: maxMinResposne.payload};;
         }
-        // const maxMinJson = await maxMinResposne.json();
         const attributes = maxMinResposne.payload.features[0].attributes;
         maxMinOid = [attributes.maxValue, attributes.minValue];
-        // incOid = maxMinOid[0] - maxMinOid[1] + 1 === sourceCount;
-    } else if (!pagination && !stats && oidField.length > 0) {
+    } 
+    // If pagination is not supported, statistics is not supported but the service has an OID field,
+    // then get all the oidValues of the service and store the max and min of those values
+    else if (!pagination && !stats && oidField.length > 0) {
         const oidValuesResponse = await fetchJson(url + '/query?where=1%3D1&returnIdsOnly=true&f=json');
         if (!oidValuesResponse.success) {
             return {error: oidValuesResponse.payload};
@@ -356,6 +362,7 @@ async function scrapeMetadata() {
     terminal.addLine({type: 'message', value: 'Collecting Metadata'});
     const url = document.querySelector('#url').value;
     metadata = await getMetadata(url);
+    // If the metadata scrape had an error, show the error on the terminal and return
     if ('error' in metadata) {
         await terminal.addLine({type: 'message', value: 'Error while trying to collect metadata'});
         await terminal.addLine({type: 'message', value: metadata.error});
