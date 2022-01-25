@@ -337,20 +337,24 @@ async function fetchQuery(query, geoType) {
             throw Error(`Too many tries to fetch query (${query})`);
     }
     return json.features.map(feature => {
-        let geometry = [];
-        // extract the feature's geometry into an array that is spread into the resulting array
-        if (geoType === 'esriGeometryPoint')
-            geometry = Object.values((feature.geometry || {x: '', y: ''})).map(value => typeof(value) === "string" ? value.trim(): value);
-        else if (geoType === 'esriGeometryMultipoint')
-            geometry = [JSON.stringify(((feature.geometry || {points: []}).points || [])).trim()];
-        else if (geoType === 'esriGeometryPolygon')
-            geometry = [JSON.stringify(((feature.geometry || {rings: []}).rings || [])).trim()];
-        // spread all feature attribute values into an array (with whitespace trimmed from string
-        // values) with the geometry appended to the end
-        return [
-            ...Object.values(feature.attributes).map(value => typeof(value) === "string" ? value.trim(): value),
-            ...geometry
-        ];
+        const output = {};
+        // Populate output object with attributes from the feature
+        for (const [key, value] of Object.entries(feature.attributes)) {
+            output[key] = typeof value === "string" ? value.trim(): value;
+        }
+        // extract the feature's geometry into the output object
+        if (geoType === 'esriGeometryPoint') {
+            const {x,y} = feature.geometry || {x: '', y: ''};
+            output['X'] = typeof x === "string" ? x.trim(): x;
+            output['Y'] = typeof y === "string" ? y.trim(): y;
+        }
+        else if (geoType === 'esriGeometryMultipoint') {
+            output['POINTS'] = JSON.stringify(((feature.geometry || {points: []}).points || [])).trim()
+        }
+        else if (geoType === 'esriGeometryPolygon') {
+            output['RINGS'] = JSON.stringify(((feature.geometry || {rings: []}).rings || [])).trim()
+        }
+        return output;
     });
 }
 
