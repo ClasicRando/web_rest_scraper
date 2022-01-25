@@ -113,6 +113,42 @@ class CustomTerminal extends Termynal {
 }
 
 /**
+ * @param {string} url
+ */
+async function fetchJson(url) {
+    let response = null;
+    let json = null;
+    try {
+        response = await fetch(url);
+    } catch (ex) {
+        console.error(ex)
+        return {
+            success: false,
+            payload: ex,
+        }
+    }
+    if (response.status !== 200 || !response.ok) {
+        return {
+            success: false,
+            payload: await response.text(),
+        }
+    }
+    try {
+        json = await response.json();
+    } catch (ex) {
+        console.error(ex);
+        return {
+            success: false,
+            payload: await response.text(),
+        }
+    }
+    return {
+        success: true,
+        payload: json,
+    }
+}
+
+/**
  * Get the query portion of a URL to get the max and min value of a specified field
  * 
  * TODO
@@ -122,9 +158,9 @@ class CustomTerminal extends Termynal {
  */
 function maxMinQuery(oidField) {
     return `/query?outStatistics=%5B%0D%0A+%7B%0D%0A++++"statisticType"%3A+"max"%2C%0D%0A++++"
-    onStatisticField"%3A+"${oid_field}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"maxValue"
+    onStatisticField"%3A+"${oidField}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"maxValue"
     %0D%0A++%7D%2C%0D%0A++%7B%0D%0A++++"statisticType"%3A+"min"%2C%0D%0A++++"onStatisticField"
-    %3A+"${oid_field}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"minValue"
+    %3A+"${oidField}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"minValue"
     %0D%0A++%7D%0D%0A%5D&f=json`
 }
 
@@ -143,17 +179,24 @@ async function getMetadata(url) {
     let queries = []
 
     // Get count from service when quering all features
-    let response = await fetch(url + countQuery);
-    let json = await response.json();
-    const sourceCount = json.count ? json.count : -1;
+    const countResponse = await fetchJson(url + countQuery);
+    // const countJson = await countResponse.json();
+    if (!countResponse.success) {
+        return {error: countResponse.payload};
+    }
+    const sourceCount = countResponse.payload.count ? countResponse.payload.count : -1;
 
     // Get JSON data about service. Provides information for scrpaing
-    response = await fetch(url + fieldQuery);
-    json = await response.json();
-    const advancedQuery = json.advancedQueryCapabilities || {};
-    const serverType = json.type;
-    const name = json.name;
-    const maxRecordCount = json.maxRecordCount;
+    const metaResponse = await fetchJson(url + fieldQuery);
+    // const metaJson = await metaResponse.json();
+    if (!metaResponse.success) {
+        return {error: metaResponse.payload};
+    }
+    const metaJson = metaResponse.payload;
+    const advancedQuery = metaJson.advancedQueryCapabilities || {};
+    const serverType = metaJson.type;
+    const name = metaJson.name;
+    const maxRecordCount = metaJson.maxRecordCount;
     const maxQueryCount = maxRecordCount > 10000 ? 10000 : maxRecordCount;
     // If 'advancedQueryCapabilities' is a key in the base JSON response then get the suppored
     // features from that object. If not then try to obtain them from the base JSON
@@ -161,17 +204,17 @@ async function getMetadata(url) {
         pagination = advancedQuery.supportsPagination || false;
         stats = advancedQuery.supportsStatistics || false;
     } else {
-        pagination = json.supportsPagination || false;
-        stats = json.supportsStatistics || false;
+        pagination = metaJson.supportsPagination || false;
+        stats = metaJson.supportsStatistics || false;
     }
-    const geoType = json.geometryType || '';
+    const geoType = metaJson.geometryType || '';
     // If service is not a TABLE then include geometry parsing using the NAD83 spatial reference
     // TODO
     // - Add spatial reference overriding to default from service or specified spatial reference
     const geoText = serverType !== 'TABLE' ? `&geometryType=${geoType}&outSR=4269` : '';
     // Get all field names while filtering out any geometry field or field named SHAPE. Any field
     // that follows those criteria are not required. Could add ability to keep those fields later
-    let fields = json.fields.filter(field =>
+    let fields = metaJson.fields.filter(field =>
         field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
     ).map(field =>
         field.name
@@ -185,18 +228,29 @@ async function getMetadata(url) {
         fields = [...fields, 'RINGS'];
     // Find first field that is of type OID and get the name. If nothing found or name is not an
     // attribute of the find result then default to empty string
-    const oidField = json.fields.find(field =>
+    const oidField = metaJson.fields.find(field =>
         field.type === 'esriFieldTypeOID'
     ).name || '';
     // If pagination is not supported, statistics is supported and the service has an OID field,
     // then get the max and min OID values which are used to generate scraping queries
     if (!pagination && stats && oidField.length > 0) {
-        resposne = await fetch(url + maxMinQuery(oidField));
-        json = await response.json();
-        const attributes = json.features[0].attributes;
+        const maxMinResposne = await fetchJson(url + maxMinQuery(oidField));
+        if (!maxMinResposne.success) {
+            return {error: maxMinResposne.payload};;
+        }
+        // const maxMinJson = await maxMinResposne.json();
+        const attributes = maxMinResposne.payload.features[0].attributes;
         maxMinOid = [attributes.maxValue, attributes.minValue];
-        incOid = maxMinOid[0] - maxMinOid[1] + 1 === sourceCount;
+        // incOid = maxMinOid[0] - maxMinOid[1] + 1 === sourceCount;
+    } else if (!pagination && !stats && oidField.length > 0) {
+        const oidValuesResponse = await fetchJson(url + '/query?where=1%3D1&returnIdsOnly=true&f=json');
+        if (!oidValuesResponse.success) {
+            return {error: oidValuesResponse.payload};
+        }
+        const oidValues = oidValuesResponse.payload['objectIds'];
+        maxMinOid = [Math.max(...oidValues), Math.min(...oidValues)];
     }
+    incOid = maxMinOid[0] - maxMinOid[1] + 1 === sourceCount;
     // TODO
     // - For this section, string queries should be replaced with URLSearchParams
     // If pagination is supported then generate queries based upon result offsets and record
@@ -208,9 +262,10 @@ async function getMetadata(url) {
     }
     // If oid field is provided then generate queries using OID ranges
     else if (oidField.length > 0) {
-        queries = [...Array(Math.ceil((maxMinOid[0] - maxMinOid[1] + 1) / maxQueryCount)).keys()].map(i => 
-            url + `/query?where=${oidField}+>%3D+${min_oid}+and+${oidField}+<%3D+${maxMinOid[1] + ((i + 1) * maxQueryCount) - 1}${geoText}&outFields=*&f=json`
-        );
+        queries = [...Array(Math.ceil((maxMinOid[0] - maxMinOid[1] + 1) / maxQueryCount)).keys()].map(i => {
+            const min_oid = maxMinOid[1] + (i * maxQueryCount);
+            return url + `/query?where=${oidField}+>%3D+${min_oid}+and+${oidField}+<%3D+${min_oid + maxQueryCount - 1}${geoText}&outFields=*&f=json`;
+        });
     }
     return {
         'queries': queries,
@@ -245,22 +300,30 @@ async function fetchQuery(query, geoType) {
     // code or if the json response indicates an error occured
     while (invalidResponse) {
         try {
-            const response = await fetch(query);
-            invalidResponse = !response.ok;
-            json = await response.json();
-            if (!Object.keys(json).includes('features')) {
-                if (Object.keys(json).includes('error')) {
-                    console.log('Request had an error. Retrying');
-                    invalidResponse = true;
-                    await new Promise(resolve => setTimeout(resolve, 10000));
-                    tryNumber++;
-                } else
-                    throw Error('Response was not an error but no features found');
+            const response = await fetchJson(query);
+            // invalidResponse = !response.ok;
+            if (response.success) {
+                json = response.payload;
+                if (!Object.keys(json).includes('features')) {
+                    if (Object.keys(json).includes('error')) {
+                        console.log('Request had an error. Retrying');
+                        invalidResponse = true;
+                        await new Promise(resolve => setTimeout(resolve, 10000));
+                        tryNumber++;
+                    } else
+                        throw Error('Response was not an error but no features found');
+                } else {
+                    invalidResponse = false;
+                }
+            } else {
+                invalidResponse = true;
+                await new Promise(resolve => setTimeout(resolve, 10000));
+                tryNumber++;
             }
         } catch (ex) {
             console.error(ex);
-            await new Promise(resolve => setTimeout(resolve, 10000));
             invalidResponse = true;
+            await new Promise(resolve => setTimeout(resolve, 10000));
             tryNumber++;
         }
         // Current max number of tries is 10. After that an error is thrown
@@ -293,6 +356,11 @@ async function scrapeMetadata() {
     terminal.addLine({type: 'message', value: 'Collecting Metadata'});
     const url = document.querySelector('#url').value;
     metadata = await getMetadata(url);
+    if ('error' in metadata) {
+        await terminal.addLine({type: 'message', value: 'Error while trying to collect metadata'});
+        await terminal.addLine({type: 'message', value: metadata.error});
+        return;
+    }
     terminal.lineDelay = 50;
     for (const [key, value] of Object.entries(metadata.info)) {
         if (Array.isArray(value))
