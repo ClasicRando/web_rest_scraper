@@ -164,11 +164,11 @@ async function fetchJson(url) {
  * @returns {string} query string interpolated with field name
  */
 function maxMinQuery(oidField) {
-    return `/query?outStatistics=%5B%0D%0A+%7B%0D%0A++++"statisticType"%3A+"max"%2C%0D%0A++++"
-    onStatisticField"%3A+"${oidField}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"maxValue"
-    %0D%0A++%7D%2C%0D%0A++%7B%0D%0A++++"statisticType"%3A+"min"%2C%0D%0A++++"onStatisticField"
-    %3A+"${oidField}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"minValue"
-    %0D%0A++%7D%0D%0A%5D&f=json`
+    return `/query?outStatistics=%5B%0D%0A+%7B%0D%0A++++"statisticType"%3A+"max"%2C%0D%0A++++"` +
+    `onStatisticField"%3A+"${oidField}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"maxValue"` +
+    `%0D%0A++%7D%2C%0D%0A++%7B%0D%0A++++"statisticType"%3A+"min"%2C%0D%0A++++"onStatisticField"` +
+    `%3A+"${oidField}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"minValue"` +
+    `%0D%0A++%7D%0D%0A%5D&f=json`;
 }
 
 /**
@@ -244,7 +244,7 @@ async function getMetadata(url) {
             return {error: maxMinResposne.payload};;
         }
         const attributes = maxMinResposne.payload.features[0].attributes;
-        maxMinOid = [attributes.maxValue, attributes.minValue];
+        maxMinOid = [attributes.MAXVALUE, attributes.MINVALUE];
     } 
     // If pagination is not supported, statistics is not supported but the service has an OID field,
     // then get all the oidValues of the service and store the max and min of those values
