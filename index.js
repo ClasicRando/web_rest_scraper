@@ -1,326 +1,510 @@
-let terminal;
-let metadata;
-let progressLines = ['|', '/', '-', '\\'];
-let currentProgressLine = 0;
+const countQueryUrlParams = new URLSearchParams({
+    "where": "1=1",
+    "returnCountOnly": "true",
+    "f": "json",
+});
+const idQueryUrlParams = new URLSearchParams({
+    "where": "1=1",
+    "returnIdsOnly": "true",
+    "f": "json",
+});
+const chunkSize = 100;
+/** @type {HTMLInputElement} */
+const baseUrl = document.querySelector("#baseUrl");
+const dataForm = document.querySelector("#dataForm");
+const exportForm = document.querySelector("#exportForm");
+const metadataButton = document.querySelector("#btnMetadata");
+const scrapeButton = document.querySelector("#btnScrape");
+/** @type {ServiceMetadata | null} */
+let metadata = null;
+
+metadataButton.addEventListener("click", async () => {
+    metadataButton.innerHTML = `
+    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true">
+    </span><span class="visually-hidden">Loading...</span>`;
+    metadata = await ServiceMetadata.fromBaseUrl(baseUrl.value);
+    metadataButton.innerHTML = '<i class="fa-solid fa-server"></i>';
+    for(const display of dataForm.querySelectorAll("input")) {
+        if (display.id === "sourceSpatialReference") {
+            const value = metadata[display.id];
+            const name = await fetchEpsgName(value);
+            display.value = name ? `${value} - ${name}` : value;
+        } else {
+            display.value = metadata[display.id];
+        }
+    }
+    dataForm.removeAttribute("hidden");
+    exportForm.removeAttribute("hidden");
+    scrapeButton.removeAttribute("disabled");
+});
+scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
+    const scrapeType = element.innerText;
+    element.addEventListener("click", async () => {
+        const exportData = new FormData(exportForm);
+        switch (scrapeType) {
+            case "CSV":
+                await metadata.scrapeData(exportData.get("outSr"), "csv");
+                break;
+            case "GeoJSON":
+                await metadata.scrapeData(exportData.get("outSr"), "geojson");
+                break;
+        }
+    });
+});
+
+
 
 /**
- * Extends the Termynal widget provide by the termynal project
- * Adds the ability to accpet user input and add new lines after initialization
+ * @param {number} epsg
+ * @returns {Promise<string>}
  */
-class CustomTerminal extends Termynal {
-
-    constructor(container, options) {
-        super(container, options);
+ async function fetchEpsgName(epsg) {
+    const response = await fetch(`https://epsg.io/${epsg}`);
+    if (!response.ok) {
+        return "";
     }
-    /**
-     * Overrides the start function from the parent class
-     * Delegates line element handling to an async member function
-     */
-    async start() {
-        await this._wait(this.startDelay);
-
-        for (const line of this.lines) {
-            await this.handleLine(line);
-            line.removeAttribute(`${this.pfx}-cursor`);
-        }
-    }
-
-    /**
-     * Handles adding lines to the termynal widget
-     * 
-     * Exposes line adding operation to initialization and line appending
-     * @param {Node} element 
-     */
-    async handleLine(element) {
-        const type = element.getAttribute(this.pfx);
-        const delay = element.getAttribute(`${this.pfx}-delay`) || this.lineDelay;
-        switch(type) {
-            case 'input':
-                element.setAttribute(`${this.pfx}-cursor`, this.cursor);
-                await this.type(element);
-                await this._wait(delay);
-                break;
-            case 'progress':
-                await this.progress(element);
-                await this._wait(delay);
-                break;
-            case 'user-input':
-                this.userInput(element);
-                await this._wait(delay);
-                break;
-            case 'task-progress':
-                this.taskProgress(element);
-                break;
-            default:
-                this.container.appendChild(element);
-                await this._wait(delay);
-                break;
-        }
-    }
-
-    /**
-     * 
-     * @param {Node} line 
-     */
-    taskProgress(line) {
-        line.textContent = ' 0%'
-        const id = line.getAttribute(`${this.pfx}-id`);
-        line.setAttribute('id', id);
-        this.lineProgressTimer = setInterval(this.updateTaskProgressLine, 250, id);
-        this.container.appendChild(line);
-    }
-
-    updateTaskProgressLine(id) {
-        currentProgressLine++;
-        if (currentProgressLine > 3)
-            currentProgressLine = 0;
-        const progressBar = document.querySelector(`#${id}`);
-        progressBar.textContent = `${progressBar.textContent.replace(/ [-|/\\]$/, '')} ${progressLines[currentProgressLine]}`;
-    }
-
-    doneTaskProgress() {
-        clearInterval(this.lineProgressTimer);
-    }
-
-    /**
-     * 
-     * @param {string} id
-     * @param {number} percent 
-     */
-    updateProgress(id, percent) {
-        const progressBar = document.querySelector(`#${id}`);
-        const progressLength = progressBar.getAttribute(`${this.pfx}-progressLength`)
-            || this.progressLength;
-        const progressChar = progressBar.getAttribute(`${this.pfx}-progressChar`)
-            || this.progressChar;
-        const chars = progressChar.repeat(progressLength);
-        const i = Math.round(percent * chars.length);
-        progressBar.textContent = `${chars.slice(0, i)} ${Math.round(percent * 100)}%`;
-    }
-
-    /**
-     * Add an element within the line to accept user input
-     * 
-     * Uses some of the line attributes to populate child attributes
-     * @param {Node} line
-     */
-    userInput(line) {
-        const childId = line.getAttribute(`${this.pfx}-childId`);
-        const handler = new Function('event', line.getAttribute(`${this.pfx}-handler`));
-        const input = document.createElement('textarea');
-        input.setAttribute('id', childId);
-        input.setAttribute('class', 'user-input');
-        input.setAttribute('type', 'text');
-        input.setAttribute('rows', '1');
-        input.addEventListener('keydown', handler);
-        // For some reason, in Firefox the input does not line up with the prompt text
-        // so I just hardcoded a different style for that case
-        if (window.navigator.userAgent.indexOf('Firefox') != -1)
-            input.setAttribute('style', 'margin: 0px 0px -5px 0px;');
-        line.appendChild(input);
-        this.container.appendChild(line);
-        document.querySelector(`#${childId}`).focus();
-    }
-
-    /**
-     * Add a single line to the terminal based upon the object attributes
-     * 
-     * Uses the same object style as the termynal project's 'lineData' property with the exception
-     * of the new 'user-input' type. This type requires some new properties:
-     *      1. childId - id used to find the input element
-     *      2. handler - dynamic js code that is used for the keydown event
-     * @param {object} line 
-     */
-    async addLine(line) {
-        document.querySelector('#terminal').lastElementChild.removeAttribute(`${this.pfx}-cursor`);
-        const div = document.createElement('div');
-        div.innerHTML = `<span ${this._attributes(line)}>${line.value}</span>`;
-        await this.handleLine(div.firstElementChild)
-        window.scrollTo(0,document.body.scrollHeight);
-    }
-
-    /**
-     * Add multiple lines to the terminal
-     * 
-     * Similar approach to the single line adding but allows for a list of objects to be passed
-     * Treats the list as having the first entry as a header and the rest as indented values
-     * 
-     * TODO
-     * - simplify code to have this function call the addLine function for each entry in the array
-     * @param {object[]} lines 
-     */
-    async addLines(lines) {
-        for (const [i, line] of lines.entries()) {
-            document.querySelector('#terminal').lastElementChild.removeAttribute(`${this.pfx}-cursor`);
-            const div = document.createElement('div');
-            const outputText = i > 0 ? `&emsp;&emsp;${line.value}` : line.value;
-            div.innerHTML = `<span ${this._attributes(line)}>${outputText}</span>`;
-            await this.handleLine(div.firstElementChild)
-            window.scrollTo(0,document.body.scrollHeight);
-        }
-    }
+    const text = await response.text();
+    const [_, name, ...rest] = text.match(/<h2 class="padt-2">(.+?)<\/h2>/);
+    return name;
 }
 
 /**
- * Get the query portion of a URL to get the max and min value of a specified field
  * 
- * TODO
- * - implement URLSearchParams rather than an HTML encoded string
- * @param {string} oidField 
- * @returns {string} query string interpolated with field name
+ * @param {string} baseUrl
+ * @param {URLSearchParams} params
+ * @return {Promise<{ok: boolean, error: string | undefined, payload: Object | undefined}>}
  */
-function maxMinQuery(oidField) {
-    return `/query?outStatistics=%5B%0D%0A+%7B%0D%0A++++"statisticType"%3A+"max"%2C%0D%0A++++"
-    onStatisticField"%3A+"${oid_field}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"maxValue"
-    %0D%0A++%7D%2C%0D%0A++%7B%0D%0A++++"statisticType"%3A+"min"%2C%0D%0A++++"onStatisticField"
-    %3A+"${oid_field}"%2C+++++%0D%0A++++"outStatisticFieldName"%3A+"minValue"
-    %0D%0A++%7D%0D%0A%5D&f=json`
-}
-
-/**
- * Obtain metadata JSON object when provided the base url of an ArcGIS REST Service
- * @param {string} url 
- * @returns {Promise<object>} JSON object with values describing Service and providing queries for scrpaing
- */
-async function getMetadata(url) {
-    const countQuery = '/query?where=1%3D1&returnCountOnly=true&f=json';
-    const fieldQuery = '?f=json';
-    let pagination = false;
-    let stats = false;
-    let maxMinOid = [-1, -1];
-    let incOid = false;
-    let queries = []
-
-    // Get count from service when quering all features
-    let response = await fetch(url + countQuery);
-    let json = await response.json();
-    const sourceCount = json.count ? json.count : -1;
-
-    // Get JSON data about service. Provides information for scrpaing
-    response = await fetch(url + fieldQuery);
-    json = await response.json();
-    const advancedQuery = json.advancedQueryCapabilities || {};
-    const serverType = json.type.toUpperCase();
-    const name = json.name;
-    const maxRecordCount = json.maxRecordCount;
-    const maxQueryCount = maxRecordCount > 10000 ? 10000 : maxRecordCount;
-    // If 'advancedQueryCapabilities' is a key in the base JSON response then get the suppored
-    // features from that object. If not then try to obtain them from the base JSON
-    if (Object.keys(advancedQuery).length > 0) {
-        pagination = advancedQuery.supportsPagination || false;
-        stats = advancedQuery.supportsStatistics || false;
-    } else {
-        pagination = json.supportsPagination || false;
-        stats = json.supportsStatistics || false;
+async function fetchJson(baseUrl, params) {
+    const url = new URL(baseUrl);
+    url.search = params.toString();
+    let response, text, json;
+    try {
+        response = await fetch(url);
+    } catch (ex) {
+        return {
+            ok: false,
+            error: ex.toString(),
+            payload: undefined,
+        }
     }
-    const geoType = json.geometryType || '';
-    // If service is not a TABLE then include geometry parsing using the NAD83 spatial reference
-    // TODO
-    // - Add spatial reference overriding to default from service or specified spatial reference
-    const geoText = serverType !== 'TABLE' ? `&geometryType=${geoType}&outSR=4269` : '';
-    // Get all field names while filtering out any geometry field or field named SHAPE. Any field
-    // that follows those criteria are not required. Could add ability to keep those fields later
-    let fields = json.fields.filter(field =>
-        field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
-    ).map(field =>
-        field.name
-    );
-    let fieldsLabels = json.fields.filter(field =>
-        field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
-    ).map(field =>
-        `${field.name}(type=${field.type})`
-    );
-    // Depending upon the geometry type, fields are added to the output fields list
-    if (geoType === 'esriGeometryPoint')
-        fields = [...fields, 'X', 'Y'];
-    else if (geoType === 'esriGeometryMultipoint')
-        fields = [...fields, 'POINTS'];
-    else if (geoType === 'esriGeometryPolygon')
-        fields = [...fields, 'RINGS'];
-    // Find first field that is of type OID and get the name. If nothing found or name is not an
-    // attribute of the find result then default to empty string
-    const oidField = json.fields.find(field =>
-        field.type === 'esriFieldTypeOID'
-    ).name || '';
-    // If pagination is not supported, statistics is supported and the service has an OID field,
-    // then get the max and min OID values which are used to generate scraping queries
-    if (!pagination && stats && oidField.length > 0) {
-        resposne = await fetch(url + maxMinQuery(oidField));
-        json = await response.json();
-        const attributes = json.features[0].attributes;
-        maxMinOid = [attributes.maxValue, attributes.minValue];
-        incOid = maxMinOid[0] - maxMinOid[1] + 1 === sourceCount;
+    if (!response.ok) {
+        return {
+            ok: false,
+            error: response.statusText,
+            payload: undefined,
+        };
     }
-    // TODO
-    // - For this section, string queries should be replaced with URLSearchParams
-    // If pagination is supported then generate queries based upon result offsets and record
-    // counts per query
-    if (pagination) {
-        queries = [...Array(Math.ceil(sourceCount/maxQueryCount)).keys()].map(i => {
-            const params = new URLSearchParams(
-                {
-                    'where': '1 = 1',
-                    'resultOffset': i * maxQueryCount,
-                    'resultRecordCount': maxQueryCount,
-                    'outFields': '*',
-                    'f': 'json'
-                }
-            );
-            if (serverType !== 'TABLE') {
-                params.append('geometryType',geoType);
-                params.append('outSR','4269');
-            }
-            return params;
-        });
-        // url + `/query?where=1+%3D+1&resultOffset=${i * maxQueryCount}&resultRecordCount=${maxQueryCount}${geoText}&outFields=*&f=json`
-    }
-    // If oid field is provided then generate queries using OID ranges
-    else if (oidField.length > 0) {
-        queries = [...Array(Math.ceil((maxMinOid[0] - maxMinOid[1] + 1) / maxQueryCount)).keys()].map(i => {
-            let minOid = maxMinOid[1] + (i * maxQueryCount);
-            const params = new URLSearchParams(
-                {
-                    'where': `${oidField} >= ${minOid} and ${oidField} <= ${minOid + maxQueryCount - 1}`,
-                    'outFields': '*',
-                    'f': 'json'
-                }
-            );
-            if (serverType !== 'TABLE') {
-                params.append('geometryType',geoType);
-                params.append('outSR','4269');
-            }
-            return params;
-        });
-        // url + `/query?where=${oidField}+>%3D+${min_oid}+and+${oidField}+<%3D+${maxMinOid[1] + ((i + 1) * maxQueryCount) - 1}${geoText}&outFields=*&f=json`
+    try {
+        text = await response.text();
+        json = JSON.parse(text);
+    } catch (ex) {
+        return {
+            ok: false,
+            error: text
+                ? `Could not deserialize response\n${text}`
+                : "Could not fetch body text of response",
+            payload: undefined,
+        }
     }
     return {
-        'queries': queries,
-        'url': url,
-        'Fields': fields,
-        'info': {
-            'Name': name,
-            'SourceCount': sourceCount,
-            'MaxRecordCount': maxRecordCount,
-            'MaxQueryCount': maxQueryCount,
-            'Pagination': pagination,
-            'Stats': stats,
-            'ServerType': serverType,
-            'GeometryType': geoType,
-            'Field Names': fieldsLabels,
-            'OidField': oidField,
-            'MaxMinOid': pagination ? null : maxMinOid,
-            'IncrementalOid': pagination ? null : incOid
-        }
+        ok: !("error" in json),
+        error: json.error,
+        payload: json,
+    }
+}
+
+/**
+ * Get the search params of a URL to get the max and min value of a specified field
+ * 
+ * @param {string} oidField
+ * @returns {URLSearchParams} search params of max min query
+ */
+function maxMinQueryUrlParams(oidField) {
+    return new URLSearchParams({
+        "outStatistics": JSON.stringify([
+            {
+                "statisticType": "max",
+                "onStatisticField": oidField,
+                "outStatisticFieldName": "MAX_VALUE",
+            },
+            {
+                "statisticType": "min",
+                "onStatisticField": oidField,
+                "outStatisticFieldName": "MIN_VALUE",
+            },
+        ]),
+        "f": "json",
+    });
+}
+
+/**
+ * 
+ * @param {string} baseUrl 
+ * @param {string} oidField
+ * @returns {Promise<Array<number>>}
+ */
+async function objectIdsQuery(baseUrl) {
+    const response = await fetchJson(`${baseUrl}/query`, idQueryUrlParams);
+    return response.ok ? response.objectIds : [-1, -1];
+}
+
+/**
+ * 
+ * @param {string} baseUrl 
+ * @param {string} oidField
+ * @param {boolean} stats
+ * @returns {Promise<{max: number, min: number}>}
+ */
+async function maxMinQuery(baseUrl, oidField, stats) {
+    if (!stats) {
+        const objectIds = await objectIdsQuery(baseUrl);
+        return {
+            "max": objectIds[objectIds.length - 1],
+            "min": objectIds[0],
+        };
+    }
+    const response = await fetchJson(`${baseUrl}/query`, maxMinQueryUrlParams(oidField));
+    if (response.ok) {
+        const attributes = response.payload.features[0].attributes;
+        return {
+            "max": attributes.MAX_VALUE,
+            "min": attributes.MIN_VALUE,
+        };
+    }
+    return {
+        "max": -1,
+        "min": -1,
     };
+}
+
+/**
+ * 
+ * @param {string} baseUrl 
+ * @returns {Promise<number>}
+ */
+async function countQuery(baseUrl) {
+    const url = new URL(`${baseUrl}/query`);
+    for (const [name, value] of countQueryUrlParams) {
+        url.searchParams.append(name, value);
+    }
+    const response = await fetchJson(`${baseUrl}/query`, countQueryUrlParams);
+    return response.ok && "count" in response.payload
+        ? response.payload.count
+        : -1;
+}
+
+/**
+ * 
+ * @param {string} baseUrl 
+ * @returns {Promise<Object>}
+ */
+async function metadataRequest(baseUrl) {
+    const response = await fetchJson(baseUrl, new URLSearchParams({"f": "json"}));
+    return response.ok ? response.payload : {};
+}
+
+class ServiceField {
+    /**
+     * 
+     * @param {string} name 
+     * @param {string} type 
+     * @param {Map<string | number, string>} codes 
+     */
+    constructor(name, type, codes={}) {
+        /** @type {string} */
+        this.name = name;
+        /** @type {string} */
+        this.type = type;
+        /** @type {Map<string | number, string>} */
+        this.codes = codes;
+    }
+}
+
+
+class ServiceMetadata {
+    /**
+     * 
+     * @param {Map<string, any>} options 
+     */
+    constructor(options) {
+        /** @type {string} */
+        this.url = options.get("url");
+        /** @type {Array<ServiceField>} */
+        this.fields = options.get("fields");
+        /** @type {string} */
+        this.name = options.get("name");
+        /** @type {number} */
+        this.sourceCount = options.get("sourceCount");
+        /** @type {number} */
+        this.maxRecordCount = options.get("maxRecordCount");
+        /** @type {boolean} */
+        this.pagination = options.get("pagination");
+        /** @type {boolean} */
+        this.stats = options.get("stats");
+        /** @type {string} */
+        this.serverType = options.get("serverType");
+        /** @type {string} */
+        this.geoType = options.get("geoType");
+        /** @type {string} */
+        this.oidField = options.get("oidField");
+        /** @type {{max: number, min: number}} */
+        this.maxMinOid = options.get("maxMinOid");
+        /** @type {number} */
+        this.sourceSpatialReference = options.get("spatialReference");
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    get incrementalOid() {
+        return this.maxMinOid.max - this.maxMinOid.min + 1 === this.sourceCount;
+    }
+
+    /**
+     * @returns {number}
+     */
+    get maxQueryCount() {
+        return this.maxRecordCount > 10000 ? 10000 : this.maxRecordCount
+    }
+
+    get scrapingMethod() {
+        if (this.pagination) {
+            return "Pagination";
+        } else if (this.incrementalOid) {
+            return "OID Ranges";
+        } else {
+            return "OID Chuncks";
+        }
+    }
+
+    /**
+     * 
+     * @param {number} outputSr 
+     * @returns 
+     */
+    async queries(outputSr) {
+        const geoParams = this.serverType !== "TABLE" ? {
+            "geometryType": this.geoType,
+            "outSr": outputSr || this.spatialReference,
+        } : {};
+        let queries = [];
+        if (this.pagination) {
+            queries = [...Array(Math.ceil(this.sourceCount/this.maxQueryCount)).keys()].map(i => {
+                const params = new URLSearchParams({
+                    'where': '1=1',
+                    'resultOffset': i * this.maxQueryCount,
+                    'resultRecordCount': this.maxQueryCount,
+                    'outFields': '*',
+                    'f': 'geojson'
+                });
+                for (const [name, value] of Object.entries(geoParams)) {
+                    params.append(name,value);
+                }
+                return params;
+            });
+        }
+        else if (this.incrementalOid) {
+            const max = this.maxMinOid.max, min = this.maxMinOid.min;
+            queries = [...Array(Math.ceil((max - min + 1) / this.maxQueryCount)).keys()].map(i => {
+                let minOid = min + (i * this.maxQueryCount);
+                const params = new URLSearchParams({
+                    'where': `${this.oidField} >= ${minOid} and ${this.oidField} <= ${minOid + this.maxQueryCount - 1}`,
+                    'outFields': '*',
+                    'f': 'geojson'
+                });
+                for (const [name, value] of Object.entries(geoParams)) {
+                    params.append(name,value);
+                }
+                return params;
+            });
+        }
+        else if (this.oidField) {
+            const objectIds = await objectIdsQuery(url);
+            if (objectIds[0]||-1 != -1) {
+                for (let i = 0; i < objectIds.length; i += chunkSize) {
+                    const chunk = objectIds.slice(i, i + chunkSize);
+                    const params = new URLSearchParams({
+                        'objectIds': chunk.join(","),
+                        'outFields': '*',
+                        'f': 'geojson'
+                    });
+                    for (const [name, value] of Object.entries(geoParams)) {
+                        params.append(name,value);
+                    }
+                    queries.push(params)
+                }
+            }
+        }
+        return queries;
+    }
+
+    get fieldLabels() {
+        return this.fields.map(field =>
+            `${field.name}(type=${field.type},coded=${Object.keys(field.codes).length == 0})`
+        )
+    }
+
+    /**
+     * 
+     * @param {number} epsg 
+     * @param {string} extension
+     */
+    async scrapeData(epsg, extension) {
+        const baseUrl = this.url;
+        const fields = this.fields;
+        const queries = await this.queries(epsg);
+        const queryCount = queries.length;
+        let queriesComplete = 0;
+        const tasks = queries.map(query => {
+            const url = new URL(`${baseUrl}/query`);
+            url.search = query.toString();
+            return fetchQuery(url)
+        });
+        const result = await tasks.reduce(async (previous, nextTask) => {
+            const accum = await previous;
+            const result = await nextTask;
+            if (typeof(fields.find(field => field.codes)) !== "undefined") {
+                for(const feature of result.features) {
+                    for (const field of fields) {
+                        if (!field.codes) {
+                            continue;
+                        }
+                        const code = feature.properties[field.name];
+                        feature.properties[`${field.name}_DESC`] = field.codes.get(code)||"";
+                    }
+                }
+            }
+            if (Object.keys(accum).length == 0) {
+                console.log(`Done ${++queriesComplete}/${queryCount}`);
+                return {
+                    "crs": result.crs,
+                    "features": result.features,
+                    "type": result.type,
+                };
+            }
+            accum.features = [...accum.features, ...result.features];
+            console.log(`Done ${++queriesComplete}/${queryCount}`);
+            return accum;
+        }, Promise.resolve({}));
+        const download = document.createElement("a");
+        if (extension === "csv") {
+            const records = result.features.map(feature => {
+                feature.properties["geometry"] = toWkt(feature.geometry);
+                return feature.properties;
+            });
+            const file = new Blob(['\ufeff', Papa.unparse(records)]);
+            download.href = URL.createObjectURL(file);
+        } else if (extension === "geojson") {
+            const features = result.features.map(feature => JSON.stringify(feature)).join(",\n");
+            const crs = JSON.stringify(result.crs);
+            const records = '{\n"type": "Feature Collection",\n"crs": ' + crs + ',\n"features": [\n' + features + '\n]\n}\n';
+            const file = new Blob(['\ufeff', records]);
+            download.href = URL.createObjectURL(file);
+        }
+        download.download = `${this.name}.${extension}`;
+    
+        document.body.appendChild(download);
+        download.click();
+        document.body.removeChild(download);
+    }
+
+    /**
+     * 
+     * @param {string} url 
+     * @returns {Promise<ServiceMetadata>}
+     */
+    static async fromBaseUrl(url) {
+        const options = new Map([["url", url]]);
+        let incOid = false;
+    
+        // Get count from service when quering all features
+        options.set("sourceCount", await countQuery(url));
+    
+        // Get JSON data about service. Provides information for scrpaing
+        const metadata = await metadataRequest(url);
+        if ("error" in metadata) {
+            return {};
+        }
+        const advancedQuery = metadata.advancedQueryCapabilities || {};
+        options.set("serverType", (metadata.type || '').toUpperCase());
+        options.set("name", metadata.name || '');
+        options.set("maxRecordCount", metadata.maxRecordCount || -1);
+        const spatialReferenceObj = metadata.sourceSpatialReference || {};
+        options.set("spatialReference", spatialReferenceObj.wkid);
+        // If 'advancedQueryCapabilities' is a key in the base JSON response then get the suppored
+        // features from that object. If not then try to obtain them from the base JSON
+        if (Object.keys(advancedQuery).length > 0) {
+            options.set("pagination", advancedQuery.supportsPagination || false);
+            options.set("stats", advancedQuery.supportsStatistics || false);
+        } else {
+            options.set("pagination", metadata.supportsPagination || false);
+            options.set("stats", metadata.supportsStatistics || false);
+        }
+        options.set("geoType", metadata.geometryType || '');
+        // Get all field names while filtering out any geometry field or field named SHAPE. Any field
+        // that follows those criteria are not required. Could add ability to keep those fields later
+        options.set(
+            "fields",
+            metadata.fields.filter(field =>
+                field.name !== 'Shape' && field.type !== 'esriFieldTypeGeometry'
+            ).map(field => {
+                const domain = field.domain || {};
+                const domainType = domain.type || "";
+                return new ServiceField(
+                    field.name,
+                    field.type,
+                    domainType === "codedValue" ? new Map(
+                        domain.codedValues.map(codedValue => [codedValue.code, codedValue.name])
+                    ) : null,
+                );
+            })
+        );
+        // Find first field that is of type OID and get the name. If nothing found or name is not an
+        // attribute of the find result then default to empty string
+        options.set(
+            "oidField",
+            options.get("fields").find(field =>
+                field.type === 'esriFieldTypeOID'
+            ).name || ''
+        );
+        // If pagination is not supported, statistics is supported and the service has an OID field,
+        // then get the max and min OID values which are used to generate scraping queries
+        if (!options.get("pagination") && options.get("oidField")) {
+            options.set("maxMinOid", await maxMinQuery(url, options.get("oidField"), options.get("stats")));
+        }
+        return new ServiceMetadata(options);
+    }
+}
+
+/**
+ * @param {{type: string, coordinates: Array<Array<number> | number>}} geometry
+ */
+function toWkt(geometry) {
+    return `${geometry.type.toUpperCase()}(${parseCoordinates(geometry.coordinates)})`;
+}
+
+/**
+ * @param {Array<Array<any> | number>} coordinates
+ */
+function parseCoordinates(coordinates) {
+    if (coordinates.length === 0) {
+        return "";
+    }
+    const firstElement = coordinates[0];
+    if (Array.isArray(firstElement)) {
+        return `(${coordinates.map(arr => parseCoordinates(arr).join(", "))})`;
+    } else {
+        return `${coordinates[0]} ${coordinates[1]}`;
+    }
 }
 
 /**
  * Fetch query features then map the data to an array
  * @param {URL} url 
- * @returns {Promise<object[][]>} nested array of objects representing rows of records
+ * @param {URLSearchParams} params
+ * @returns {Promise<Object>} nested array of objects representing rows of records
  */
 async function fetchQuery(url) {
-    let geoType = url.searchParams.get('geometryType') || '';
     let invalidResponse = true;
     let tryNumber = 1;
     let json;
@@ -330,15 +514,24 @@ async function fetchQuery(url) {
         try {
             const response = await fetch(url);
             invalidResponse = !response.ok;
-            json = await response.json();
-            if (!Object.keys(json).includes('features')) {
-                if (Object.keys(json).includes('error')) {
-                    console.log('Request had an error. Retrying');
-                    invalidResponse = true;
-                    await new Promise(resolve => setTimeout(resolve, 10000));
-                    tryNumber++;
-                } else
-                    throw Error('Response was not an error but no features found');
+            if (invalidResponse) {
+                console.log('Not OK Response. Retrying');
+                invalidResponse = true;
+                await new Promise(resolve => setTimeout(resolve, 10000));
+                tryNumber++;
+            } else {
+                json = await response.json();
+                if (!("features" in json)) {
+                    if ("error" in json) {
+                        console.log(url);
+                        console.log('Request had an error. Retrying');
+                        invalidResponse = true;
+                        await new Promise(resolve => setTimeout(resolve, 10000));
+                        tryNumber++;
+                    } else {
+                        throw Error('Response was not an error but no features found');
+                    }
+                }
             }
         } catch (ex) {
             console.error(ex);
@@ -349,146 +542,7 @@ async function fetchQuery(url) {
         // Current max number of tries is 10. After that an error is thrown
         if (tryNumber > 10) {
             throw Error(`Too many tries to fetch query (${url.href})`);
-            return [[]];
         }
     }
-    return json.features.map(feature => {
-        let geometry = [];
-        // extract the feature's geometry into an array that is spread into the resulting array
-        if (geoType === 'esriGeometryPoint')
-            geometry = Object.values((feature.geometry || {x: '', y: ''})).map(value => typeof(value) === "string" ? value.trim(): value);
-        else if (geoType === 'esriGeometryMultipoint')
-            geometry = [JSON.stringify(((feature.geometry || {points: []}).points || [])).trim()];
-        else if (geoType === 'esriGeometryPolygon')
-            geometry = [JSON.stringify(((feature.geometry || {rings: []}).rings || [])).trim()];
-        // spread all feature attribute values into an array (with whitespace trimmed from string
-        // values) with the geometry appended to the end
-        return [
-            ...Object.values(feature.attributes).map(value => typeof(value) === "string" ? value.trim(): value),
-            ...geometry
-        ];
-    });
-}
-
-/**
- * Fetchs service metadata then displays the results onto the terminal widget
- */
-async function scrapeMetadata() {
-    terminal.addLine({type: 'message', value: 'Starting data scrape'});
-    terminal.addLine({type: 'message', value: 'Collecting Metadata'});
-    const url = document.querySelector('#url').value;
-    metadata = await getMetadata(url);
-    terminal.lineDelay = 50;
-    for (const [key, value] of Object.entries(metadata.info)) {
-        if (value === null)
-            continue;
-        else if (Array.isArray(value))
-            await terminal.addLines([key, ...value].map(text => { return {type: 'message', value: text}}));
-        else
-            await terminal.addLine({type: 'message', value: `${key}: ${value}`});
-    }
-    terminal.lineDelay = 800;
-    await terminal.addLine({type: 'message', value: 'Done Metadata collection. Continue with scrape(y/n)?'});
-    await terminal.addLine(
-        {
-            type: 'user-input',
-            prompt: '>',
-            childId: 'proceed',
-            handler: `{
-                if (event.code == 'Enter' || event.code == 'NumpadEnter') {
-                    const response = document.querySelector('#proceed').value;
-                    document.querySelector('#proceed').setAttribute('disabled', '');
-                    if (response.toUpperCase() !== 'Y')
-                        setTimeout(exitTerminal,1,'Did not want to proceed with Scrape');
-                    else
-                        setTimeout(scrapeData,1);
-                }
-            }`,
-            value: ''
-        }
-    )
-}
-
-/**
- * Ends the user interaction with the terminal due to user input or error
- * 
- * Displays a message provided to the function then added line noting end of session
- * @param {string} message 
- */
-async function exitTerminal(message) {
-    if (message.length > 0)
-        await terminal.addLine({type: 'message', value: message});
-    await terminal.addLine({type: 'message', value: 'Exiting Terminal'});
-}
-
-/**
- * Executes all queries from the service metadata and parses all the features into a CSV
- */
-async function scrapeData() {
-    await terminal.addLine({type: 'message', value: 'Starting scrape'});
-    await terminal.addLine(
-        {
-            type: 'task-progress',
-            id: 'scrapeProgress',
-            progressChar: '█',
-            progressLength: 40
-        }
-    );
-    const queryCount = metadata.queries.length;
-    let queriesComplete = 0;
-    const tasks = metadata.queries.map(query => {
-        const url = new URL(metadata.url + '/query')
-        url.search = query.toString();
-        return fetchQuery(url)
-    });
-    const result = await tasks.reduce(async (previous, nextTask) => {
-        const accum = await previous;
-        const result = await nextTask;
-        queriesComplete++;
-        console.log(`Done ${queriesComplete}/${queryCount}`);
-        terminal.updateProgress('scrapeProgress', queriesComplete / queryCount);
-        return [...accum, ...result];
-    }, Promise.resolve([]));
-    terminal.doneTaskProgress();
-    // const result = await Promise.all(tasks);
-    await terminal.addLine({type: 'message', value: 'Done fetching data! Parsing to CSV'});
-    // const data = Papa.unparse({data: result, fields: metadata.fields});
-    // const csv = new Blob(['\ufeff', data]);
-    // const download = document.createElement("a")
-    // download.href = URL.createObjectURL(csv)
-    // download.download = `${metadata.info.Name}.csv`
-
-    // document.body.appendChild(download)
-    // download.click()
-    // document.body.removeChild(download)
-}
-
-/**
- * Function called when HTML body is loaded. Adds terminal element and builds widget
- */
-function start() {
-    document.body.innerHTML += '<div id="terminal"></div>';
-    terminal = new CustomTerminal(
-        '#terminal',
-        {
-            typeDelay: 10,
-            lineDelay: 800,
-            lineData: [
-                {type: 'message', value: 'Welcome to the ArcGIS REST Service Scraper!'},
-                {type: 'message', value: 'Enter the base url of the service you want to scrape below'},
-                {
-                    type: 'user-input',
-                    prompt: '>',
-                    childId: 'url',
-                    handler: `{
-                        if (event.code == 'Enter' || event.code == 'NumpadEnter') {
-                            document.querySelector('#url').setAttribute('disabled', '');
-                            setTimeout(scrapeMetadata,1);
-                        }
-                    }`,
-                    value: ''
-                }
-            ]
-        }
-    )
+    return json;
 }
