@@ -1,22 +1,55 @@
-const countQueryUrlParams = new URLSearchParams({
-    "where": "1=1",
-    "returnCountOnly": "true",
-    "f": "json",
-});
-const idQueryUrlParams = new URLSearchParams({
-    "where": "1=1",
-    "returnIdsOnly": "true",
-    "f": "json",
-});
 const chunkSize = 100;
 /** @type {HTMLInputElement} */
 const baseUrl = document.querySelector("#baseUrl");
+/** @type {HTMLFormElement} */
 const dataForm = document.querySelector("#dataForm");
+/** @type {HTMLFormElement} */
 const exportForm = document.querySelector("#exportForm");
+/** @type {HTMLButtonElement} */
 const metadataButton = document.querySelector("#btnMetadata");
+/** @type {HTMLButtonElement} */
 const scrapeButton = document.querySelector("#btnScrape");
+/** @type {HTMLDivElement} */
+const scrapeButtonRow = document.querySelector("#scrapeButtonRow");
+/** @type {HTMLUListElement} */
+const scrapeOptions = document.querySelector("#scrapeOptions");
+/** @type {HTMLDivElement} */
+const scrapeProgressBar = document.querySelector(".progress-bar");
+/** @type {HTMLDivElement} */
+const scrapeProgress = document.querySelector(".progress");
 /** @type {ServiceMetadata | null} */
 let metadata = null;
+
+/**
+ * @param {string} where
+ */
+function countQueryUrlParams(where) {
+    return new URLSearchParams({
+        "where": where ? where : "1=1",
+        "returnCountOnly": "true",
+        "f": "json",
+    });
+}
+
+/**
+ * @param {string} where
+ */
+function idQueryUrlParams(where) {
+    return new URLSearchParams({
+        "where": where ? where : "1=1",
+        "returnIdsOnly": "true",
+        "f": "json",
+    });
+}
+
+/**
+ * 
+ * @param {number} milliseconds 
+ * @returns {Promise<void>}
+ */
+async function sleep(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
 
 metadataButton.addEventListener("click", async () => {
     metadataButton.innerHTML = `
@@ -35,20 +68,37 @@ metadataButton.addEventListener("click", async () => {
     }
     dataForm.removeAttribute("hidden");
     exportForm.removeAttribute("hidden");
-    scrapeButton.removeAttribute("disabled");
+    scrapeButtonRow.removeAttribute("hidden");
 });
 scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
     const scrapeType = element.innerText;
     element.addEventListener("click", async () => {
         const exportData = new FormData(exportForm);
+        scrapeOptions.setAttribute("hidden", "");
+        scrapeButton.setAttribute("hidden", "");
+        scrapeProgress.removeAttribute("hidden");
+        scrapeProgressBar.setAttribute("aria-valuemax", "5");
         switch (scrapeType) {
             case "CSV":
-                await metadata.scrapeData(exportData.get("outSr"), "csv");
+                await metadata.scrapeData(
+                    exportData.get("outSr"),
+                    "csv",
+                    exportData.get("where")
+                );
                 break;
             case "GeoJSON":
-                await metadata.scrapeData(exportData.get("outSr"), "geojson");
+                await metadata.scrapeData(
+                    exportData.get("outSr"),
+                    "geojson",
+                    exportData.get("where")
+                );
                 break;
         }
+        await sleep(1000);
+        scrapeProgressBar.style.width = "0%";
+        scrapeButton.removeAttribute("hidden");
+        scrapeOptions.removeAttribute("hidden");
+        scrapeProgress.setAttribute("hidden", "");
     });
 });
 
@@ -140,12 +190,12 @@ function maxMinQueryUrlParams(oidField) {
 /**
  * 
  * @param {string} baseUrl 
- * @param {string} oidField
+ * @param {string} where
  * @returns {Promise<Array<number>>}
  */
-async function objectIdsQuery(baseUrl) {
-    const response = await fetchJson(`${baseUrl}/query`, idQueryUrlParams);
-    return response.ok ? response.objectIds : [-1, -1];
+async function objectIdsQuery(baseUrl, where="1=1") {
+    const response = await fetchJson(`${baseUrl}/query`, idQueryUrlParams(where));
+    return response.ok ? response.payload.objectIds : [-1, -1];
 }
 
 /**
@@ -180,14 +230,11 @@ async function maxMinQuery(baseUrl, oidField, stats) {
 /**
  * 
  * @param {string} baseUrl 
+ * @param {string} where
  * @returns {Promise<number>}
  */
-async function countQuery(baseUrl) {
-    const url = new URL(`${baseUrl}/query`);
-    for (const [name, value] of countQueryUrlParams) {
-        url.searchParams.append(name, value);
-    }
-    const response = await fetchJson(`${baseUrl}/query`, countQueryUrlParams);
+async function countQuery(baseUrl, where="1=1") {
+    const response = await fetchJson(`${baseUrl}/query`, countQueryUrlParams(where));
     return response.ok && "count" in response.payload
         ? response.payload.count
         : -1;
@@ -267,6 +314,9 @@ class ServiceMetadata {
         return this.maxRecordCount > 10000 ? 10000 : this.maxRecordCount
     }
 
+    /**
+     * @returns {string}
+     */
     get scrapingMethod() {
         if (this.pagination) {
             return "Pagination";
@@ -280,18 +330,22 @@ class ServiceMetadata {
     /**
      * 
      * @param {number} outputSr 
+     * @param {string | undefined} where
      * @returns 
      */
-    async queries(outputSr) {
+    async queries(outputSr, where=undefined) {
         const geoParams = this.serverType !== "TABLE" ? {
             "geometryType": this.geoType,
             "outSr": outputSr || this.spatialReference,
         } : {};
         let queries = [];
         if (this.pagination) {
-            queries = [...Array(Math.ceil(this.sourceCount/this.maxQueryCount)).keys()].map(i => {
+            const queryCount = where
+                ? (await countQuery(this.url, where))/this.maxQueryCount
+                : this.sourceCount/this.maxQueryCount;
+            queries = [...Array(Math.ceil(queryCount)).keys()].map(i => {
                 const params = new URLSearchParams({
-                    'where': '1=1',
+                    'where': where||'1=1',
                     'resultOffset': i * this.maxQueryCount,
                     'resultRecordCount': this.maxQueryCount,
                     'outFields': '*',
@@ -303,7 +357,7 @@ class ServiceMetadata {
                 return params;
             });
         }
-        else if (this.incrementalOid) {
+        else if (this.incrementalOid && !where) {
             const max = this.maxMinOid.max, min = this.maxMinOid.min;
             queries = [...Array(Math.ceil((max - min + 1) / this.maxQueryCount)).keys()].map(i => {
                 let minOid = min + (i * this.maxQueryCount);
@@ -319,7 +373,7 @@ class ServiceMetadata {
             });
         }
         else if (this.oidField) {
-            const objectIds = await objectIdsQuery(url);
+            const objectIds = await objectIdsQuery(this.url, where);
             if (objectIds[0]||-1 != -1) {
                 for (let i = 0; i < objectIds.length; i += chunkSize) {
                     const chunk = objectIds.slice(i, i + chunkSize);
@@ -348,11 +402,12 @@ class ServiceMetadata {
      * 
      * @param {number} epsg 
      * @param {string} extension
+     * @param {string} where
      */
-    async scrapeData(epsg, extension) {
+    async scrapeData(epsg, extension, where) {
         const baseUrl = this.url;
         const fields = this.fields;
-        const queries = await this.queries(epsg);
+        const queries = await this.queries(epsg,where);
         const queryCount = queries.length;
         let queriesComplete = 0;
         const tasks = queries.map(query => {
@@ -383,6 +438,7 @@ class ServiceMetadata {
                 };
             }
             accum.features = [...accum.features, ...result.features];
+            scrapeProgressBar.style.width = `${Math.round((queriesComplete/queryCount)*100)}%`;
             console.log(`Done ${++queriesComplete}/${queryCount}`);
             return accum;
         }, Promise.resolve({}));

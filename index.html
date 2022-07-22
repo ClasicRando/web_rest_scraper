@@ -81,15 +81,28 @@
                             </div>
                         </div>
                     </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="input-group mb-3">
+                                <span class="input-group-text">Where Query</span>
+                                <input type="text" class="form-control" name="where" placeholder="field > 0 and field2 = 'Status'" aria-label="where">
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
-            <div class="row">
+            <div class="row" id="scrapeButtonRow" hidden>
                 <div class="col d-flex justify-content-md-end">
-                    <button id="btnScrape" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" disabled>Scrape</button>
-                    <ul class="dropdown-menu">
+                    <button id="btnScrape" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Scrape</button>
+                    <ul class="dropdown-menu" id="scrapeOptions">
                         <li><a class="dropdown-item" href="#">CSV</a></li>
                         <li><a class="dropdown-item" href="#">GeoJSON</a></li>
                     </ul>
+                </div>
+            </div>
+            <div class="row" id="scrapeProgressRow">
+                <div class="progress" hidden>
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-label="Animated striped example" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
                 </div>
             </div>
         </div>
