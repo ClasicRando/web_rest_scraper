@@ -13,6 +13,7 @@
         <div class="container">
             <h1>ArcGIS REST Service Scraper</h1>
             <hr>
+            <div class="toast-container top-0 end-0 position-absolute" id="toastContainer"></div>
             <div class="row">
                 <form id="inputForm">
                     <div class="row">
@@ -61,6 +62,9 @@
                     <div class="row">
                         <div class="col">
                             <div class="input-group mb-3">
+                                <div class="input-group-text">
+                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkOutSr">
+                                </div>
                                 <span class="input-group-text">Output Spatial Reference</span>
                                 <input type="text" class="form-control" name="outSr" placeholder="EPSG Code" aria-label="outSr">
                             </div>
@@ -84,8 +88,23 @@
                     <div class="row">
                         <div class="col">
                             <div class="input-group mb-3">
+                                <div class="input-group-text">
+                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkDate">
+                                </div>
+                                <span class="input-group-text">Format/Transform Date Fields</span>
+                                <input type="text" class="form-control" name="dateFormat" placeholder="YYYY-MM-DDTHH:mm:ssZ" aria-label="dateFormat" disabled="">
+                                <select class="form-select" name="timeZone" aria-label="timeZone" id="timeZone"></select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="input-group mb-3">
+                                <div class="input-group-text">
+                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkWhere">
+                                </div>
                                 <span class="input-group-text">Where Query</span>
-                                <input type="text" class="form-control" name="where" placeholder="field > 0 and field2 = 'Status'" aria-label="where">
+                                <input type="text" class="form-control" name="where" placeholder="field > 0 and field2 = 'Status'" aria-label="where" disabled="">
                             </div>
                         </div>
                     </div>

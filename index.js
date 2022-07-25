@@ -17,8 +17,23 @@ const scrapeOptions = document.querySelector("#scrapeOptions");
 const scrapeProgressBar = document.querySelector(".progress-bar");
 /** @type {HTMLDivElement} */
 const scrapeProgress = document.querySelector(".progress");
+/** @type {HTMLDivElement} */
+const toastContainer = document.querySelector("#toastContainer");
+/** @type {HTMLSelectElement} */
+const timeZoneSelector = document.querySelector("#timeZone");
 /** @type {ServiceMetadata | null} */
 let metadata = null;
+/** @type {Array<string>} */
+const timeZones = Intl.supportedValuesOf('timeZone');
+for(const timeZone of timeZones) {
+    const zoneOption = document.createElement("option");
+    zoneOption.value = timeZone;
+    zoneOption.innerText = timeZone;
+    if (timeZone === "UTC") {
+        zoneOption.setAttribute("selected", "");
+    }
+    timeZoneSelector.appendChild(zoneOption);
+}
 
 /**
  * @param {string} where
@@ -51,7 +66,66 @@ async function sleep(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
+async function postToast(message) {
+    const toast = document.createElement("div");
+    toast.classList.add("toast");
+    toast.setAttribute("role", "alert");
+    const toastHeader = document.createElement("toast-header");
+    toastHeader.classList.add("toast-header");
+    const headerText = document.createElement("strong");
+    headerText.innerText = "Scraper Service";
+    headerText.classList.add("me-auto");
+    toastHeader.appendChild(headerText);
+    const closeButton = document.createElement("button");
+    closeButton.classList.add("btn-close");
+    closeButton.setAttribute("data-bs-dismiss", "toast");
+    toastHeader.appendChild(closeButton);
+    toast.appendChild(toastHeader);
+    const toastBody = document.createElement("div");
+    toastBody.classList.add("toast-body");
+    toastBody.innerText = message;
+    toast.appendChild(toastBody);
+    toastContainer.appendChild(toast);
+    const bToast = new bootstrap.Toast(toast);
+    await bToast.show();
+}
+
+exportForm.querySelector("#chkDate").addEventListener("change", async (e) => {
+    const dateInput = exportForm.querySelector("input[name=dateFormat]");
+    const timeZoneInput = exportForm.querySelector("select[name=timeZone]");
+    if (e.target.checked) {
+        dateInput.value = "";
+        dateInput.removeAttribute("disabled");
+    } else {
+        dateInput.value = "";
+        dateInput.setAttribute("disabled", "");
+    }
+});
+exportForm.querySelector("#chkWhere").addEventListener("change", async (e) => {
+    const whereInput = exportForm.querySelector("input[name=where]");
+    if (e.target.checked) {
+        whereInput.value = "";
+        whereInput.removeAttribute("disabled");
+    } else {
+        whereInput.value = "";
+        whereInput.setAttribute("disabled", "");
+    }
+});
+exportForm.querySelector("#chkOutSr").addEventListener("change", async (e) => {
+    const outSrInput = exportForm.querySelector("input[name=outSr]");
+    if (e.target.checked) {
+        outSrInput.value = "";
+        outSrInput.removeAttribute("disabled");
+    } else {
+        outSrInput.value = "";
+        outSrInput.setAttribute("disabled", "");
+    }
+});
 metadataButton.addEventListener("click", async () => {
+    if (baseUrl.value === "") {
+        await postToast("Empty Url");
+        return;
+    }
     metadataButton.innerHTML = `
     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true">
     </span><span class="visually-hidden">Loading...</span>`;
@@ -74,6 +148,8 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
     const scrapeType = element.innerText;
     element.addEventListener("click", async () => {
         const exportData = new FormData(exportForm);
+        const outputSr = (exportData.get("outSr")||"").trim();
+        const whereQuery = (exportData.get("where")||"").trim();
         scrapeOptions.setAttribute("hidden", "");
         scrapeButton.setAttribute("hidden", "");
         scrapeProgress.removeAttribute("hidden");
@@ -81,20 +157,20 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         switch (scrapeType) {
             case "CSV":
                 await metadata.scrapeData(
-                    exportData.get("outSr"),
+                    outputSr,
                     "csv",
-                    exportData.get("where")
+                    whereQuery ? whereQuery : undefined
                 );
                 break;
             case "GeoJSON":
                 await metadata.scrapeData(
-                    exportData.get("outSr"),
+                    outputSr,
                     "geojson",
-                    exportData.get("where")
+                    whereQuery ? whereQuery : undefined
                 );
                 break;
         }
-        await sleep(1000);
+        await sleep(500);
         scrapeProgressBar.style.width = "0%";
         scrapeButton.removeAttribute("hidden");
         scrapeOptions.removeAttribute("hidden");
@@ -122,7 +198,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
  * 
  * @param {string} baseUrl
  * @param {URLSearchParams} params
- * @return {Promise<{ok: boolean, error: string | undefined, payload: Object | undefined}>}
+ * @return {Promise<{ok: boolean, error: string, payload: Object}>}
  */
 async function fetchJson(baseUrl, params) {
     const url = new URL(baseUrl);
@@ -134,14 +210,14 @@ async function fetchJson(baseUrl, params) {
         return {
             ok: false,
             error: ex.toString(),
-            payload: undefined,
+            payload: {},
         }
     }
     if (!response.ok) {
         return {
             ok: false,
             error: response.statusText,
-            payload: undefined,
+            payload: {},
         };
     }
     try {
@@ -153,12 +229,12 @@ async function fetchJson(baseUrl, params) {
             error: text
                 ? `Could not deserialize response\n${text}`
                 : "Could not fetch body text of response",
-            payload: undefined,
+            payload: {},
         }
     }
     return {
         ok: !("error" in json),
-        error: json.error,
+        error: (json.error||{message: ""}).message,
         payload: json,
     }
 }
@@ -231,23 +307,23 @@ async function maxMinQuery(baseUrl, oidField, stats) {
  * 
  * @param {string} baseUrl 
  * @param {string} where
- * @returns {Promise<number>}
+ * @returns {Promise<number | string>}
  */
 async function countQuery(baseUrl, where="1=1") {
     const response = await fetchJson(`${baseUrl}/query`, countQueryUrlParams(where));
     return response.ok && "count" in response.payload
         ? response.payload.count
-        : -1;
+        : response.error;
 }
 
 /**
  * 
  * @param {string} baseUrl 
- * @returns {Promise<Object>}
+ * @returns {Promise<Object | string>}
  */
 async function metadataRequest(baseUrl) {
     const response = await fetchJson(baseUrl, new URLSearchParams({"f": "json"}));
-    return response.ok ? response.payload : {};
+    return response.ok ? response.payload : response.error;
 }
 
 class ServiceField {
@@ -331,18 +407,28 @@ class ServiceMetadata {
      * 
      * @param {number} outputSr 
      * @param {string | undefined} where
-     * @returns 
+     * @returns {Promise<Array<string>>}
      */
     async queries(outputSr, where=undefined) {
         const geoParams = this.serverType !== "TABLE" ? {
             "geometryType": this.geoType,
-            "outSr": outputSr || this.spatialReference,
+            "outSr": outputSr||this.sourceSpatialReference,
         } : {};
         let queries = [];
         if (this.pagination) {
-            const queryCount = where
-                ? (await countQuery(this.url, where))/this.maxQueryCount
-                : this.sourceCount/this.maxQueryCount;
+            let queryCount = -1;
+            if (where) {
+                const whereCount = await countQuery(this.url, where);
+                if (typeof whereCount === "string") {
+                    await postToast(`Error:\n${whereCount}`);
+                    return queries;
+                }
+                console.log(whereCount);
+                console.log(this.maxQueryCount);
+                queryCount = whereCount/this.maxQueryCount;
+            } else {
+                queryCount = this.sourceCount/this.maxQueryCount;
+            }
             queries = [...Array(Math.ceil(queryCount)).keys()].map(i => {
                 const params = new URLSearchParams({
                     'where': where||'1=1',
@@ -409,6 +495,9 @@ class ServiceMetadata {
         const fields = this.fields;
         const queries = await this.queries(epsg,where);
         const queryCount = queries.length;
+        if (queryCount === 0) {
+            return;
+        }
         let queriesComplete = 0;
         const tasks = queries.map(query => {
             const url = new URL(`${baseUrl}/query`);
@@ -430,7 +519,7 @@ class ServiceMetadata {
                 }
             }
             if (Object.keys(accum).length == 0) {
-                console.log(`Done ${++queriesComplete}/${queryCount}`);
+                scrapeProgressBar.style.width = `${Math.round((++queriesComplete/queryCount)*100)}%`;
                 return {
                     "crs": result.crs,
                     "features": result.features,
@@ -438,8 +527,7 @@ class ServiceMetadata {
                 };
             }
             accum.features = [...accum.features, ...result.features];
-            scrapeProgressBar.style.width = `${Math.round((queriesComplete/queryCount)*100)}%`;
-            console.log(`Done ${++queriesComplete}/${queryCount}`);
+            scrapeProgressBar.style.width = `${Math.round((++queriesComplete/queryCount)*100)}%`;
             return accum;
         }, Promise.resolve({}));
         const download = document.createElement("a");
@@ -467,17 +555,24 @@ class ServiceMetadata {
     /**
      * 
      * @param {string} url 
-     * @returns {Promise<ServiceMetadata>}
+     * @returns {Promise<ServiceMetadata | string>}
      */
     static async fromBaseUrl(url) {
         const options = new Map([["url", url]]);
         let incOid = false;
     
         // Get count from service when quering all features
-        options.set("sourceCount", await countQuery(url));
+        const count = await countQuery(url);
+        if (typeof(count) === "string") {
+            return count;
+        }
+        options.set("sourceCount", count);
     
         // Get JSON data about service. Provides information for scrpaing
         const metadata = await metadataRequest(url);
+        if (typeof(metadata) === "string") {
+            return metadata;
+        }
         if ("error" in metadata) {
             return {};
         }
@@ -571,7 +666,7 @@ async function fetchQuery(url) {
             const response = await fetch(url);
             invalidResponse = !response.ok;
             if (invalidResponse) {
-                console.log('Not OK Response. Retrying');
+                await postToast('Not OK Response. Retrying');
                 invalidResponse = true;
                 await new Promise(resolve => setTimeout(resolve, 10000));
                 tryNumber++;
@@ -579,8 +674,8 @@ async function fetchQuery(url) {
                 json = await response.json();
                 if (!("features" in json)) {
                     if ("error" in json) {
-                        console.log(url);
-                        console.log('Request had an error. Retrying');
+                        console.log('Request had an error. Retrying', url);
+                        postToast('Request had an error. Retrying');
                         invalidResponse = true;
                         await new Promise(resolve => setTimeout(resolve, 10000));
                         tryNumber++;
@@ -590,6 +685,7 @@ async function fetchQuery(url) {
                 }
             }
         } catch (ex) {
+            postToast(`Caught Error: ${ex}`);
             console.error(ex);
             await new Promise(resolve => setTimeout(resolve, 10000));
             invalidResponse = true;
