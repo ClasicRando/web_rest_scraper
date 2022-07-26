@@ -15,6 +15,13 @@
             <hr>
             <div class="toast-container top-0 end-0 position-absolute" id="toastContainer"></div>
             <div class="row">
+                <div class="alert alert-light border" role="alert" style="font-size: small;">
+                    <p>Scape entire feature collections from ArcGIS REST Services using various querying methods.</p>
+                    <p>NOTE: This application is very much in a beta state and I cannot guarentee that every service will cooperate or produce valid results.</p>
+                    <p>If you find any bugs please submit an issue using the <a href="https://github.com/ClasicRando/web_rest_scraper/issues">github page</a></p>
+                </div>
+            </div>
+            <div class="row">
                 <form id="inputForm">
                     <div class="row">
                         <div class="input-group mb-3">
@@ -29,30 +36,47 @@
             </div>
             <div class="row">
                 <form id="dataForm" hidden>
-                    <div class="row mb-3">
+                    <div class="row">
                         <div class="col">
-                            <label for="name" class="form-label">Service Name</label>
-                            <input type="text" class="form-control" name="name" id="name" readonly>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col">
-                            <label for="geoType" class="form-label">Geometry Type</label>
-                            <input type="text" class="form-control" name="geoType" id="geoType" readonly>
-                        </div>
-                        <div class="col">
-                            <label for="sourceSpatialReference" class="form-label">Source Spatial Reference</label>
-                            <input type="text" class="form-control" name="sourceSpatialReference" id="sourceSpatialReference" readonly>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col">
-                            <label for="maxQueryCount" class="form-label">Max Query Count</label>
-                            <input type="text" class="form-control" name="maxQueryCount" id="maxQueryCount" readonly>
+                            <div class="table-responsive" style="max-height: 500px;">
+                                <table class="table table-stripped caption-top" style="overflow-y: hidden;" id="fields">
+                                    <caption>Service Fields</caption>
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Type</th>
+                                            <th>Is Coded?</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
                         </div>
                         <div class="col">
-                            <label for="scrapingMethod" class="form-label">Scraping Method</label>
-                            <input type="text" class="form-control" name="scrapingMethod" id="scrapingMethod" readonly>
+                            <div class="row mb-3">
+                                <label for="name" class="form-label">Service Name</label>
+                                <input type="text" class="form-control" name="name" id="name" readonly>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="geoType" class="form-label">Geometry Type</label>
+                                <input type="text" class="form-control" name="geoType" id="geoType" readonly>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="sourceSpatialReference" class="form-label">Source Spatial Reference</label>
+                                <input type="text" class="form-control" name="sourceSpatialReference" id="sourceSpatialReference" readonly>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="maxQueryCount" class="form-label">Max Query Count</label>
+                                <input type="text" class="form-control" name="maxQueryCount" id="maxQueryCount" readonly>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="scrapingMethod" class="form-label">Scraping Method</label>
+                                <input type="text" class="form-control" name="scrapingMethod" id="scrapingMethod" readonly>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="sourceCount" class="form-label">Feature Count</label>
+                                <input type="text" class="form-control" name="sourceCount" id="sourceCount" readonly>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -60,70 +84,63 @@
             <div class="row">
                 <form id="exportForm" hidden>
                     <div class="row">
-                        <div class="col-3">
-                            <ul class="list-group" id="fields"></ul>
+                        <div class="col">
+                            <div class="input-group mb-3">
+                                <div class="input-group-text">
+                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkOutSr">
+                                </div>
+                                <span class="input-group-text">Output Spatial Reference</span>
+                                <input type="text" class="form-control" name="outSr" placeholder="EPSG Code" aria-label="outSr" disabled>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="input-group mb-3">
+                                <div class="input-group-text">
+                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkDate">
+                                </div>
+                                <span class="input-group-text">Format/Transform Date Fields</span>
+                                <select class="form-select" name="dateFormat" aria-label="dateFormat" id="dateFormat" disabled></select>
+                                <select class="form-select" name="timeZone" aria-label="timeZone" id="timeZone" disabled></select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="input-group mb-3">
+                                <div class="input-group-text">
+                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkWhere">
+                                </div>
+                                <span class="input-group-text">Where Query</span>
+                                <input type="text" class="form-control" name="where" placeholder="field > 0 and field2 = 'Status'" aria-label="where" disabled>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="input-group mb-3">
+                                <span class="input-group-text">Retries</span>
+                                <input type="number" class="form-control" name="retry" placeholder="(Default 5)" aria-label="retry">
+                            </div>
                         </div>
                         <div class="col">
-                            <div class="row">
-                                <div class="col">
-                                    <div class="input-group mb-3">
-                                        <div class="input-group-text">
-                                            <input class="form-check-input mt-0" type="checkbox" value="" id="chkOutSr">
-                                        </div>
-                                        <span class="input-group-text">Output Spatial Reference</span>
-                                        <input type="text" class="form-control" name="outSr" placeholder="EPSG Code" aria-label="outSr" disabled>
-                                    </div>
-                                </div>
+                            <div class="input-group mb-3">
+                                <span class="input-group-text">Include Geometry</span>
+                                <select class="form-select" name="includeGeometry" aria-label="includeGeometry">
+                                    <option value="y" selected>Yes</option>
+                                    <option value="n">No</option>
+                                </select>
                             </div>
-                            <div class="row">
-                                <div class="col">
-                                    <div class="input-group mb-3">
-                                        <div class="input-group-text">
-                                            <input class="form-check-input mt-0" type="checkbox" value="" id="chkDate">
-                                        </div>
-                                        <span class="input-group-text">Format/Transform Date Fields</span>
-                                        <select class="form-select" name="dateFormat" aria-label="dateFormat" id="dateFormat" disabled></select>
-                                        <select class="form-select" name="timeZone" aria-label="timeZone" id="timeZone" disabled></select>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="col">
-                                    <div class="input-group mb-3">
-                                        <div class="input-group-text">
-                                            <input class="form-check-input mt-0" type="checkbox" value="" id="chkWhere">
-                                        </div>
-                                        <span class="input-group-text">Where Query</span>
-                                        <input type="text" class="form-control" name="where" placeholder="field > 0 and field2 = 'Status'" aria-label="where" disabled>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="col">
-                                    <div class="input-group mb-3">
-                                        <span class="input-group-text">Retries</span>
-                                        <input type="number" class="form-control" name="retry" placeholder="(Default 5)" aria-label="retry">
-                                    </div>
-                                </div>
-                                <div class="col">
-                                    <div class="input-group mb-3">
-                                        <span class="input-group-text">Include Geometry</span>
-                                        <select class="form-select" name="includeGeometry" aria-label="includeGeometry">
-                                            <option value="y" selected>Yes</option>
-                                            <option value="n">No</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row" id="scrapeButtonRow" hidden>
-                                <div class="col d-flex justify-content-md-end">
-                                    <button id="btnScrape" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Scrape</button>
-                                    <ul class="dropdown-menu" id="scrapeOptions">
-                                        <li><a class="dropdown-item" href="#">CSV</a></li>
-                                        <li><a class="dropdown-item" href="#">GeoJSON</a></li>
-                                    </ul>
-                                </div>
-                            </div>
+                        </div>
+                    </div>
+                    <div class="row" id="scrapeButtonRow" hidden>
+                        <div class="col d-flex justify-content-md-end">
+                            <button id="btnScrape" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Scrape</button>
+                            <ul class="dropdown-menu" id="scrapeOptions">
+                                <li><a class="dropdown-item" href="#">CSV</a></li>
+                                <li><a class="dropdown-item" href="#">GeoJSON</a></li>
+                            </ul>
                         </div>
                     </div>
                 </form>

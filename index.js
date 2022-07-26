@@ -23,8 +23,8 @@ const toastContainer = document.querySelector("#toastContainer");
 const timeZoneSelector = document.querySelector("#timeZone");
 /** @type {HTMLSelectElement} */
 const dateFormatSelector = document.querySelector("#dateFormat");
-/** @type {HTMLUListElement} */
-const fieldsList = document.querySelector("#fields");
+/** @type {HTMLTableElement} */
+const fieldsTableBody = document.querySelector("#fields tbody");
 /** @type {ServiceMetadata | null} */
 let metadata = null;
 /** @type {Array<{display: string, func: (date: Date, zone: string) => string}>} */
@@ -32,7 +32,6 @@ const dateFormats = [
     {
         display: "YYYY-MM-DD HH24:Mi:SS Z",
         func: (date, zone) => {
-            const newDate = date
             const year = new Intl.DateTimeFormat("en", { timeZone: zone, year: "numeric"}).format(date);
             const month = new Intl.DateTimeFormat("en", { timeZone: zone, month: "2-digit"}).format(date);
             const day = new Intl.DateTimeFormat("en", { timeZone: zone, day: "2-digit"}).format(date);
@@ -184,20 +183,19 @@ metadataButton.addEventListener("click", async () => {
             display.value = metadata[display.id];
         }
     }
-    removeAllChildren(fieldsList);
+    removeAllChildren(fieldsTableBody);
     for(const field of metadata.fields) {
-        const fieldItem = document.createElement("li");
-        fieldItem.classList.add("list-group-item");
-        const fieldHeader = document.createElement("h5");
-        fieldHeader.innerText = field.name;
-        const fieldType = document.createElement("p");
-        fieldType.innerText = `Type: ${field.type}`;
-        const fieldCoded = document.createElement("p");
-        fieldCoded.innerText = `Coded: ${field.isCoded}`;
-        fieldItem.appendChild(fieldHeader);
-        fieldItem.appendChild(fieldType);
-        fieldItem.appendChild(fieldCoded);
-        fieldsList.appendChild(fieldItem);
+        const fieldRow = document.createElement("tr");
+        const fieldName = document.createElement("td");
+        fieldName.innerText = field.name;
+        const fieldType = document.createElement("td");
+        fieldType.innerText = field.type;
+        const fieldCoded = document.createElement("td");
+        fieldCoded.innerText = field.isCoded;
+        fieldRow.appendChild(fieldName);
+        fieldRow.appendChild(fieldType);
+        fieldRow.appendChild(fieldCoded);
+        fieldsTableBody.appendChild(fieldRow);
     }
     dataForm.removeAttribute("hidden");
     exportForm.removeAttribute("hidden");
