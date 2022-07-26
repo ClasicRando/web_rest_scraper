@@ -215,6 +215,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         const whereQuery = (exportData.get("where")||"").trim();
         const dateFormat = exportData.get("dateFormat");
         const timeZone = exportData.get("timeZone");
+        const getGeometry = exportData.get("includeGeometry");
         scrapeOptions.setAttribute("hidden", "");
         scrapeButton.setAttribute("hidden", "");
         scrapeProgress.removeAttribute("hidden");
@@ -222,8 +223,9 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         switch (scrapeType) {
             case "CSV":
                 await metadata.scrapeData(
-                    outputSr ? outputSr : undefined,
+                    getGeometry === "y",
                     "csv",
+                    outputSr ? outputSr : undefined,
                     whereQuery ? whereQuery : undefined,
                     dateFormat ? {
                         format: dateFormats[dateFormat].func,
@@ -233,8 +235,9 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
                 break;
             case "GeoJSON":
                 await metadata.scrapeData(
-                    outputSr ? outputSr : undefined,
+                    getGeometry === "y",
                     "geojson",
+                    outputSr ? outputSr : undefined,
                     whereQuery ? whereQuery : undefined,
                     dateFormat ? {
                         format: dateFormats[dateFormat].func,
@@ -482,15 +485,16 @@ class ServiceMetadata {
 
     /**
      * 
+     * @param {boolean} getGeometry
      * @param {number} outputSr 
      * @param {string | undefined} where
      * @returns {Promise<Array<string>>}
      */
-    async queries(outputSr, where=undefined) {
-        const geoParams = this.serverType !== "TABLE" ? {
+    async queries(getGeometry, outputSr=undefined, where=undefined) {
+        const geoParams = this.serverType !== "TABLE" && getGeometry ? {
             "geometryType": this.geoType,
             "outSr": outputSr||this.sourceSpatialReference,
-        } : {};
+        } : { "returnGeometry": false };
         let queries = [];
         if (this.pagination) {
             let queryCount = -1;
@@ -563,15 +567,16 @@ class ServiceMetadata {
 
     /**
      * 
-     * @param {number} epsg 
+     * @param {boolean} getGeometry
      * @param {string} extension
+     * @param {number} epsg 
      * @param {string} where
      * @param {{format: (date: Date) => string, zone: string}} dateFormat
      */
-    async scrapeData(epsg, extension, where=undefined, dateFormat=undefined) {
+    async scrapeData(getGeometry, extension, epsg=undefined, where=undefined, dateFormat=undefined) {
         const baseUrl = this.url;
         const fields = this.fields;
-        const queries = await this.queries(epsg,where);
+        const queries = await this.queries(getGeometry, epsg,where);
         const queryCount = queries.length;
         if (queryCount === 0) {
             return;
@@ -615,7 +620,9 @@ class ServiceMetadata {
         const download = document.createElement("a");
         if (extension === "csv") {
             const records = result.features.map(feature => {
-                feature.properties["geometry"] = toWkt(feature.geometry);
+                if (getGeometry) {
+                    feature.properties["geometry"] = toWkt(feature.geometry);
+                }
                 return feature.properties;
             });
             const file = new Blob(['\ufeff', Papa.unparse(records)]);
