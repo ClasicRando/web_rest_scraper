@@ -1,6 +1,5 @@
 <h1>Web Rest Scaper</h1>
-This project is a web version of another application I made to scrape ArcGIS Rest services
-
-<h3>Thanks</h3>
-
-- termynal project (https://github.com/ines/termynal), extended base class for dynamic input and overrode some methods to fit needs
+This project is a web version of another application I made to scrape ArcGIS Rest services.
+Utilizes GeoJSON requests to the web service using various scraping methods to obtain all features.
+Allows the user to transform data fields and specify an output spatial reference.
+The output is either a CSV or GeoJSON file.
