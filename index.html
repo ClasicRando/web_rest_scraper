@@ -60,64 +60,73 @@
             <div class="row">
                 <form id="exportForm" hidden>
                     <div class="row">
+                        <div class="col-3">
+                            <ul class="list-group" id="fields"></ul>
+                        </div>
                         <div class="col">
-                            <div class="input-group mb-3">
-                                <div class="input-group-text">
-                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkOutSr">
+                            <div class="row">
+                                <div class="col">
+                                    <div class="input-group mb-3">
+                                        <div class="input-group-text">
+                                            <input class="form-check-input mt-0" type="checkbox" value="" id="chkOutSr">
+                                        </div>
+                                        <span class="input-group-text">Output Spatial Reference</span>
+                                        <input type="text" class="form-control" name="outSr" placeholder="EPSG Code" aria-label="outSr" disabled>
+                                    </div>
                                 </div>
-                                <span class="input-group-text">Output Spatial Reference</span>
-                                <input type="text" class="form-control" name="outSr" placeholder="EPSG Code" aria-label="outSr">
                             </div>
-                        </div>
-                        <div class="col">
-                            <div class="input-group mb-3">
-                                <span class="input-group-text">Retries</span>
-                                <input type="number" class="form-control" name="retry" placeholder="(Default 5)" aria-label="retry">
-                            </div>
-                        </div>
-                        <div class="col">
-                            <div class="input-group mb-3">
-                                <span class="input-group-text">Include Geometry</span>
-                                <select class="form-select" name="includeGeometry" aria-label="includeGeometry">
-                                    <option value="y" selected>Yes</option>
-                                    <option value="n">No</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col">
-                            <div class="input-group mb-3">
-                                <div class="input-group-text">
-                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkDate">
+                            <div class="row">
+                                <div class="col">
+                                    <div class="input-group mb-3">
+                                        <div class="input-group-text">
+                                            <input class="form-check-input mt-0" type="checkbox" value="" id="chkDate">
+                                        </div>
+                                        <span class="input-group-text">Format/Transform Date Fields</span>
+                                        <select class="form-select" name="dateFormat" aria-label="dateFormat" id="dateFormat" disabled></select>
+                                        <select class="form-select" name="timeZone" aria-label="timeZone" id="timeZone" disabled></select>
+                                    </div>
                                 </div>
-                                <span class="input-group-text">Format/Transform Date Fields</span>
-                                <input type="text" class="form-control" name="dateFormat" placeholder="YYYY-MM-DDTHH:mm:ssZ" aria-label="dateFormat" disabled="">
-                                <select class="form-select" name="timeZone" aria-label="timeZone" id="timeZone"></select>
                             </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col">
-                            <div class="input-group mb-3">
-                                <div class="input-group-text">
-                                    <input class="form-check-input mt-0" type="checkbox" value="" id="chkWhere">
+                            <div class="row">
+                                <div class="col">
+                                    <div class="input-group mb-3">
+                                        <div class="input-group-text">
+                                            <input class="form-check-input mt-0" type="checkbox" value="" id="chkWhere">
+                                        </div>
+                                        <span class="input-group-text">Where Query</span>
+                                        <input type="text" class="form-control" name="where" placeholder="field > 0 and field2 = 'Status'" aria-label="where" disabled>
+                                    </div>
                                 </div>
-                                <span class="input-group-text">Where Query</span>
-                                <input type="text" class="form-control" name="where" placeholder="field > 0 and field2 = 'Status'" aria-label="where" disabled="">
+                            </div>
+                            <div class="row">
+                                <div class="col">
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text">Retries</span>
+                                        <input type="number" class="form-control" name="retry" placeholder="(Default 5)" aria-label="retry">
+                                    </div>
+                                </div>
+                                <div class="col">
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text">Include Geometry</span>
+                                        <select class="form-select" name="includeGeometry" aria-label="includeGeometry">
+                                            <option value="y" selected>Yes</option>
+                                            <option value="n">No</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row" id="scrapeButtonRow" hidden>
+                                <div class="col d-flex justify-content-md-end">
+                                    <button id="btnScrape" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Scrape</button>
+                                    <ul class="dropdown-menu" id="scrapeOptions">
+                                        <li><a class="dropdown-item" href="#">CSV</a></li>
+                                        <li><a class="dropdown-item" href="#">GeoJSON</a></li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </form>
-            </div>
-            <div class="row" id="scrapeButtonRow" hidden>
-                <div class="col d-flex justify-content-md-end">
-                    <button id="btnScrape" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Scrape</button>
-                    <ul class="dropdown-menu" id="scrapeOptions">
-                        <li><a class="dropdown-item" href="#">CSV</a></li>
-                        <li><a class="dropdown-item" href="#">GeoJSON</a></li>
-                    </ul>
-                </div>
             </div>
             <div class="row" id="scrapeProgressRow">
                 <div class="progress" hidden>

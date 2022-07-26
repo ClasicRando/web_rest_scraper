@@ -21,8 +21,30 @@ const scrapeProgress = document.querySelector(".progress");
 const toastContainer = document.querySelector("#toastContainer");
 /** @type {HTMLSelectElement} */
 const timeZoneSelector = document.querySelector("#timeZone");
+/** @type {HTMLSelectElement} */
+const dateFormatSelector = document.querySelector("#dateFormat");
+/** @type {HTMLUListElement} */
+const fieldsList = document.querySelector("#fields");
 /** @type {ServiceMetadata | null} */
 let metadata = null;
+/** @type {Array<{display: string, func: (date: Date, zone: string) => string}>} */
+const dateFormats = [
+    {
+        display: "YYYY-MM-DD HH24:Mi:SS Z",
+        func: (date, zone) => {
+            const newDate = date
+            const year = new Intl.DateTimeFormat("en", { timeZone: zone, year: "numeric"}).format(date);
+            const month = new Intl.DateTimeFormat("en", { timeZone: zone, month: "2-digit"}).format(date);
+            const day = new Intl.DateTimeFormat("en", { timeZone: zone, day: "2-digit"}).format(date);
+            const hour = new Intl.DateTimeFormat("en", { timeZone: zone, hour: "2-digit", hour12: false}).format(date);
+            const minute = new Intl.DateTimeFormat("en", { timeZone: zone, minute: "2-digit"}).format(date);
+            const second = new Intl.DateTimeFormat("en", { timeZone: zone, second: "2-digit"}).format(date);
+            const timeZone = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "short"}).format(date);
+            const [_, shortZoneName, ...rest] = timeZone.match(/, (.+)$/);
+            return `${year}-${month}-${day} ${hour}:${minute}:${second} ${shortZoneName}`;
+        }
+    }
+];
 /** @type {Array<string>} */
 const timeZones = Intl.supportedValuesOf('timeZone');
 for(const timeZone of timeZones) {
@@ -33,6 +55,15 @@ for(const timeZone of timeZones) {
         zoneOption.setAttribute("selected", "");
     }
     timeZoneSelector.appendChild(zoneOption);
+}
+for(const [i, dateFormat] of dateFormats.entries()) {
+    const formatOption = document.createElement("option");
+    formatOption.value = i.toString();
+    formatOption.innerText = dateFormat.display;
+    if (i === 0) {
+        formatOption.setAttribute("selected", "");
+    }
+    dateFormatSelector.appendChild(formatOption);
 }
 
 /**
@@ -55,6 +86,15 @@ function idQueryUrlParams(where) {
         "returnIdsOnly": "true",
         "f": "json",
     });
+}
+
+/**
+ * @param {HTMLElement} element
+ */
+function removeAllChildren(element) {
+    while (element.hasChildNodes()) {
+        element.removeChild(element.firstChild);
+    }
 }
 
 /**
@@ -91,14 +131,18 @@ async function postToast(message) {
 }
 
 exportForm.querySelector("#chkDate").addEventListener("change", async (e) => {
-    const dateInput = exportForm.querySelector("input[name=dateFormat]");
+    const dateInput = exportForm.querySelector("select[name=dateFormat]");
     const timeZoneInput = exportForm.querySelector("select[name=timeZone]");
     if (e.target.checked) {
-        dateInput.value = "";
+        dateInput.selectedIndex = 0;
+        timeZoneInput.value = "UTC";
         dateInput.removeAttribute("disabled");
+        timeZoneInput.removeAttribute("disabled");
     } else {
         dateInput.value = "";
+        timeZoneInput.value = "";
         dateInput.setAttribute("disabled", "");
+        timeZoneInput.setAttribute("disabled", "");
     }
 });
 exportForm.querySelector("#chkWhere").addEventListener("change", async (e) => {
@@ -140,6 +184,21 @@ metadataButton.addEventListener("click", async () => {
             display.value = metadata[display.id];
         }
     }
+    removeAllChildren(fieldsList);
+    for(const field of metadata.fields) {
+        const fieldItem = document.createElement("li");
+        fieldItem.classList.add("list-group-item");
+        const fieldHeader = document.createElement("h5");
+        fieldHeader.innerText = field.name;
+        const fieldType = document.createElement("p");
+        fieldType.innerText = `Type: ${field.type}`;
+        const fieldCoded = document.createElement("p");
+        fieldCoded.innerText = `Coded: ${field.isCoded}`;
+        fieldItem.appendChild(fieldHeader);
+        fieldItem.appendChild(fieldType);
+        fieldItem.appendChild(fieldCoded);
+        fieldsList.appendChild(fieldItem);
+    }
     dataForm.removeAttribute("hidden");
     exportForm.removeAttribute("hidden");
     scrapeButtonRow.removeAttribute("hidden");
@@ -149,7 +208,13 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
     element.addEventListener("click", async () => {
         const exportData = new FormData(exportForm);
         const outputSr = (exportData.get("outSr")||"").trim();
+        if (outputSr && !outputSr.match(/^\d+$/)) {
+            await postToast("\"Output Spatial Reference\" must be a number");
+            return;
+        }
         const whereQuery = (exportData.get("where")||"").trim();
+        const dateFormat = exportData.get("dateFormat");
+        const timeZone = exportData.get("timeZone");
         scrapeOptions.setAttribute("hidden", "");
         scrapeButton.setAttribute("hidden", "");
         scrapeProgress.removeAttribute("hidden");
@@ -157,16 +222,24 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         switch (scrapeType) {
             case "CSV":
                 await metadata.scrapeData(
-                    outputSr,
+                    outputSr ? outputSr : undefined,
                     "csv",
-                    whereQuery ? whereQuery : undefined
+                    whereQuery ? whereQuery : undefined,
+                    dateFormat ? {
+                        format: dateFormats[dateFormat].func,
+                        zone: timeZone
+                    } : undefined,
                 );
                 break;
             case "GeoJSON":
                 await metadata.scrapeData(
-                    outputSr,
+                    outputSr ? outputSr : undefined,
                     "geojson",
-                    whereQuery ? whereQuery : undefined
+                    whereQuery ? whereQuery : undefined,
+                    dateFormat ? {
+                        format: dateFormats[dateFormat].func,
+                        zone: timeZone
+                    } : undefined,
                 );
                 break;
         }
@@ -331,15 +404,19 @@ class ServiceField {
      * 
      * @param {string} name 
      * @param {string} type 
-     * @param {Map<string | number, string>} codes 
+     * @param {Map<string | number, string> | undefined} codes 
      */
-    constructor(name, type, codes={}) {
+    constructor(name, type, codes=undefined) {
         /** @type {string} */
         this.name = name;
         /** @type {string} */
         this.type = type;
         /** @type {Map<string | number, string>} */
-        this.codes = codes;
+        this.codes = codes||new Map();
+    }
+
+    get isCoded() {
+        return this.codes.size > 0;
     }
 }
 
@@ -480,7 +557,7 @@ class ServiceMetadata {
 
     get fieldLabels() {
         return this.fields.map(field =>
-            `${field.name}(type=${field.type},coded=${Object.keys(field.codes).length == 0})`
+            `${field.name}(type=${field.type},coded=${field.codes.size > 0})`
         )
     }
 
@@ -489,8 +566,9 @@ class ServiceMetadata {
      * @param {number} epsg 
      * @param {string} extension
      * @param {string} where
+     * @param {{format: (date: Date) => string, zone: string}} dateFormat
      */
-    async scrapeData(epsg, extension, where) {
+    async scrapeData(epsg, extension, where=undefined, dateFormat=undefined) {
         const baseUrl = this.url;
         const fields = this.fields;
         const queries = await this.queries(epsg,where);
@@ -510,11 +588,15 @@ class ServiceMetadata {
             if (typeof(fields.find(field => field.codes)) !== "undefined") {
                 for(const feature of result.features) {
                     for (const field of fields) {
-                        if (!field.codes) {
-                            continue;
+                        if (field.codes) {
+                            const code = feature.properties[field.name];
+                            feature.properties[`${field.name}_DESC`] = field.codes.get(code)||"";
                         }
-                        const code = feature.properties[field.name];
-                        feature.properties[`${field.name}_DESC`] = field.codes.get(code)||"";
+                        else if (field.type === "esriFieldTypeDate" && dateFormat) {
+                            const date = feature.properties[field.name];
+                            const fDate = dateFormat.format(new Date(date), dateFormat.zone);
+                            feature.properties[`${field.name}_DT`] = fDate;
+                        }
                     }
                 }
             }
@@ -606,7 +688,7 @@ class ServiceMetadata {
                     field.type,
                     domainType === "codedValue" ? new Map(
                         domain.codedValues.map(codedValue => [codedValue.code, codedValue.name])
-                    ) : null,
+                    ) : undefined,
                 );
             })
         );
@@ -631,7 +713,7 @@ class ServiceMetadata {
  * @param {{type: string, coordinates: Array<Array<number> | number>}} geometry
  */
 function toWkt(geometry) {
-    return `${geometry.type.toUpperCase()}(${parseCoordinates(geometry.coordinates)})`;
+    return `${geometry.type.toUpperCase()} ${parseCoordinates(geometry.coordinates)}`;
 }
 
 /**
@@ -643,7 +725,7 @@ function parseCoordinates(coordinates) {
     }
     const firstElement = coordinates[0];
     if (Array.isArray(firstElement)) {
-        return `(${coordinates.map(arr => parseCoordinates(arr).join(", "))})`;
+        return `(${coordinates.map(arr => parseCoordinates(arr)).join(", ")})`;
     } else {
         return `${coordinates[0]} ${coordinates[1]}`;
     }
