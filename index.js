@@ -776,8 +776,8 @@ async function fetchQuery(url) {
         } catch (ex) {
             postToast(`Caught Error: ${ex}`);
             console.error(ex);
-            await new Promise(resolve => setTimeout(resolve, 10000));
             invalidResponse = true;
+            await new Promise(resolve => setTimeout(resolve, 10000));
             tryNumber++;
         }
         // Current max number of tries is 10. After that an error is thrown
