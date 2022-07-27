@@ -32,16 +32,16 @@ const dateFormats = [
     {
         display: "YYYY-MM-DD HH24:Mi:SS Z",
         func: (date, zone) => {
-            const year = new Intl.DateTimeFormat("en", { timeZone: zone, year: "numeric"}).format(date);
-            const month = new Intl.DateTimeFormat("en", { timeZone: zone, month: "2-digit"}).format(date);
-            const day = new Intl.DateTimeFormat("en", { timeZone: zone, day: "2-digit"}).format(date);
-            const hour = new Intl.DateTimeFormat("en", { timeZone: zone, hour: "2-digit", hour12: false}).format(date);
-            const minute = new Intl.DateTimeFormat("en", { timeZone: zone, minute: "2-digit"}).format(date);
-            const second = new Intl.DateTimeFormat("en", { timeZone: zone, second: "2-digit"}).format(date);
-            const timeZone = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "short"}).format(date);
-            const [_, shortZoneName, ...rest] = timeZone.match(/, (.+)$/);
-            return `${year}-${month}-${day} ${hour}:${minute}:${second} ${shortZoneName}`;
-        }
+              const year = new Intl.DateTimeFormat("en-us", { timeZone: zone, year: "numeric"}).format(date);
+              const month = new Intl.DateTimeFormat("en-us", { timeZone: zone, month: "2-digit"}).format(date);
+              const day = new Intl.DateTimeFormat("en-us", { timeZone: zone, day: "2-digit"}).format(date);
+              const hour = new Intl.DateTimeFormat("en-us", { timeZone: zone, hour: "2-digit", hour12: false}).format(date);
+              const minute = new Intl.DateTimeFormat("en-us", { timeZone: zone, minute: "2-digit"}).format(date);
+              const second = new Intl.DateTimeFormat("en-us", { timeZone: zone, second: "2-digit"}).format(date);
+              const timeZone = new Intl.DateTimeFormat("en-us", { timeZone: zone, timeZoneName: "short"}).format(date);
+              const [_, shortZoneName, ...rest] = timeZone.match(/, (.+)$/);
+              return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')} ${shortZoneName}`;
+          }
     }
 ];
 /** @type {Array<string>} */
@@ -53,6 +53,13 @@ for(const timeZone of timeZones) {
     if (timeZone === "UTC") {
         zoneOption.setAttribute("selected", "");
     }
+    timeZoneSelector.appendChild(zoneOption);
+}
+if (!timeZones.includes("UTC")) {
+    const zoneOption = document.createElement("option");
+    zoneOption.value = "UTC";
+    zoneOption.innerText = "UTC";
+    zoneOption.setAttribute("selected", "");
     timeZoneSelector.appendChild(zoneOption);
 }
 for(const [i, dateFormat] of dateFormats.entries()) {
@@ -211,6 +218,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
             return;
         }
         const whereQuery = (exportData.get("where")||"").trim();
+        const formatDates = exportForm.querySelector("#chkDate");
         const dateFormat = exportData.get("dateFormat");
         const timeZone = exportData.get("timeZone");
         const getGeometry = exportData.get("includeGeometry");
@@ -225,7 +233,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
                     "csv",
                     outputSr ? outputSr : undefined,
                     whereQuery ? whereQuery : undefined,
-                    dateFormat ? {
+                    formatDates.checked ? {
                         format: dateFormats[dateFormat].func,
                         zone: timeZone
                     } : undefined,
@@ -481,7 +489,7 @@ class ServiceMetadata {
         } else if (this.incrementalOid) {
             return "OID Ranges";
         } else {
-            return "OID Chuncks";
+            return "OID Chunks";
         }
     }
 
@@ -595,7 +603,7 @@ class ServiceMetadata {
             if (typeof(fields.find(field => field.codes)) !== "undefined") {
                 for(const feature of result.features) {
                     for (const field of fields) {
-                        if (field.codes) {
+                        if (field.codes.size > 0) {
                             const code = feature.properties[field.name];
                             feature.properties[`${field.name}_DESC`] = field.codes.get(code)||"";
                         }
@@ -627,13 +635,23 @@ class ServiceMetadata {
                 }
                 return feature.properties;
             });
-            const file = new Blob(['\ufeff', Papa.unparse(records)]);
+            const parseOptions = {
+                quotes: false,
+            	quoteChar: '"',
+            	escapeChar: '"',
+            	delimiter: ",",
+            	header: true,
+            	newline: "\n",
+            	skipEmptyLines: false,
+            	columns: null
+            }
+            const file = new Blob(["\ufeff", Papa.unparse(records, parseOptions), "\u000A"]);
             download.href = URL.createObjectURL(file);
         } else if (extension === "geojson") {
             const features = result.features.map(feature => JSON.stringify(feature)).join(",\n");
             const crs = JSON.stringify(result.crs);
             const records = '{\n"type": "Feature Collection",\n"crs": ' + crs + ',\n"features": [\n' + features + '\n]\n}\n';
-            const file = new Blob(['\ufeff', records]);
+            const file = new Blob(["\ufeff", records]);
             download.href = URL.createObjectURL(file);
         }
         download.download = `${this.name}.${extension}`;
@@ -652,14 +670,14 @@ class ServiceMetadata {
         const options = new Map([["url", url]]);
         let incOid = false;
     
-        // Get count from service when quering all features
+        // Get count from service when querying all features
         const count = await countQuery(url);
         if (typeof(count) === "string") {
             return count;
         }
         options.set("sourceCount", count);
     
-        // Get JSON data about service. Provides information for scrpaing
+        // Get JSON data about service. Provides information for scraping
         const metadata = await metadataRequest(url);
         if (typeof(metadata) === "string") {
             return metadata;
@@ -673,7 +691,7 @@ class ServiceMetadata {
         options.set("maxRecordCount", metadata.maxRecordCount || -1);
         const spatialReferenceObj = metadata.sourceSpatialReference || {};
         options.set("spatialReference", spatialReferenceObj.wkid);
-        // If 'advancedQueryCapabilities' is a key in the base JSON response then get the suppored
+        // If 'advancedQueryCapabilities' is a key in the base JSON response then get the supported
         // features from that object. If not then try to obtain them from the base JSON
         if (Object.keys(advancedQuery).length > 0) {
             options.set("pagination", advancedQuery.supportsPagination || false);
@@ -757,7 +775,7 @@ async function fetchQuery(url) {
     let tryNumber = 1;
     let json;
     // Try query multiple times if error is thrown, response status is an error
-    // code or if the json response indicates an error occured
+    // code or if the json response indicates an error occurred
     while (invalidResponse) {
         try {
             const response = await fetch(url);
