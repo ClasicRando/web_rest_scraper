@@ -178,7 +178,7 @@ metadataButton.addEventListener("click", async () => {
         if (display.id === "sourceSpatialReference") {
             const value = metadata[display.id];
             const name = await fetchEpsgName(value);
-            display.value = name ? `${value} - ${name}` : value;
+            display.value = name ? name : value;
         } else {
             display.value = metadata[display.id];
         }
@@ -264,8 +264,12 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         return "";
     }
     const text = await response.text();
-    const [_, name, ...rest] = text.match(/<h2 class="padt-2">(.+?)<\/h2>/);
-    return name;
+    const match = text.match(/<title>\s*(.+?)\s*<\/title>/);
+    if (match) {
+        const [_, name, ...rest] = match;
+        return name;
+    }
+    return "";
 }
 
 /**
