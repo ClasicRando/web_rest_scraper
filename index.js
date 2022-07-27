@@ -722,6 +722,12 @@ class ServiceMetadata {
  * @param {{type: string, coordinates: Array<Array<number> | number>}} geometry
  */
 function toWkt(geometry) {
+    if (!geometry) {
+        return "";
+    }
+    if (geometry.type.toUpperCase() === "POINT") {
+        return `POINT (${parseCoordinates(geometry.coordinates)})`;
+    }
     return `${geometry.type.toUpperCase()} ${parseCoordinates(geometry.coordinates)}`;
 }
 
