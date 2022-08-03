@@ -133,6 +133,15 @@
                                 </select>
                             </div>
                         </div>
+                        <div id="pointXY" class="col" hidden>
+                            <div class="input-group mb-3">
+                                <span class="input-group-text">Point as X/Y?</span>
+                                <select class="form-select" name="pointXY" aria-label="includeGeometry">
+                                    <option value="y" selected>Yes</option>
+                                    <option value="n">No</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     <div class="row" id="scrapeButtonRow" hidden>
                         <div class="col d-flex justify-content-md-end">
@@ -145,7 +154,7 @@
                     </div>
                 </form>
             </div>
-            <div class="row" id="scrapeProgressRow">
+            <div class="row mb-3" id="scrapeProgressRow">
                 <div class="progress" hidden>
                     <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-label="Animated striped example" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
                 </div>
