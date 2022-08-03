@@ -25,6 +25,8 @@ const timeZoneSelector = document.querySelector("#timeZone");
 const dateFormatSelector = document.querySelector("#dateFormat");
 /** @type {HTMLTableElement} */
 const fieldsTableBody = document.querySelector("#fields tbody");
+/** @type {HTMLDivElement} */
+const pointXYColumn = document.querySelector("#pointXY");
 /** @type {ServiceMetadata | null} */
 let metadata = null;
 /** @type {Array<{display: string, func: (date: Date, zone: string) => string}>} */
@@ -181,6 +183,11 @@ metadataButton.addEventListener("click", async () => {
     </span><span class="visually-hidden">Loading...</span>`;
     metadata = await ServiceMetadata.fromBaseUrl(baseUrl.value);
     metadataButton.innerHTML = '<i class="fa-solid fa-server"></i>';
+    if (metadata.geoType === "esriGeometryPoint") {
+        pointXYColumn.removeAttribute("hidden");
+    } else {
+        pointXYColumn.setAttribute("hidden", "");
+    }
     for(const display of dataForm.querySelectorAll("input")) {
         if (display.id === "sourceSpatialReference") {
             const value = metadata[display.id];
@@ -222,6 +229,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         const dateFormat = exportData.get("dateFormat");
         const timeZone = exportData.get("timeZone");
         const getGeometry = exportData.get("includeGeometry");
+        const pointXY = exportData.get("pointXY");
         scrapeOptions.setAttribute("hidden", "");
         scrapeButton.setAttribute("hidden", "");
         scrapeProgress.removeAttribute("hidden");
@@ -230,6 +238,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
             case "CSV":
                 await metadata.scrapeData(
                     getGeometry === "y",
+                    pointXY === "y" && metadata.geoType === "esriGeometryPoint",
                     "csv",
                     outputSr ? outputSr : undefined,
                     whereQuery ? whereQuery : undefined,
@@ -242,6 +251,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
             case "GeoJSON":
                 await metadata.scrapeData(
                     getGeometry === "y",
+                    pointXY === "y" && metadata.geoType === "esriGeometryPoint",
                     "geojson",
                     outputSr ? outputSr : undefined,
                     whereQuery ? whereQuery : undefined,
@@ -578,12 +588,13 @@ class ServiceMetadata {
     /**
      * 
      * @param {boolean} getGeometry
+     * @param {boolean} pointXY
      * @param {string} extension
      * @param {number} epsg 
      * @param {string} where
      * @param {{format: (date: Date) => string, zone: string}} dateFormat
      */
-    async scrapeData(getGeometry, extension, epsg=undefined, where=undefined, dateFormat=undefined) {
+    async scrapeData(getGeometry, pointXY, extension, epsg=undefined, where=undefined, dateFormat=undefined) {
         const baseUrl = this.url;
         const fields = this.fields;
         const queries = await this.queries(getGeometry, epsg,where);
@@ -631,7 +642,13 @@ class ServiceMetadata {
         if (extension === "csv") {
             const records = result.features.map(feature => {
                 if (getGeometry) {
-                    feature.properties["geometry"] = toWkt(feature.geometry);
+                    if (pointXY) {
+                        const xy = toXY(feature.geometry);
+                        feature.properties.x = xy.x;
+                        feature.properties.y = xy.y;
+                    } else {
+                        feature.properties.geometry = toWkt(feature.geometry);
+                    }
                 }
                 return feature.properties;
             });
@@ -737,7 +754,19 @@ class ServiceMetadata {
 }
 
 /**
+ * @param {{type: string, coordinates: Array<Array<number>>}} pointGeometry
+ * @return {{x: number, y: number}}
+ */
+function toXY(pointGeometry) {
+    return {
+        x: pointGeometry.coordinates[0],
+        y: pointGeometry.coordinates[1],
+    }
+}
+
+/**
  * @param {{type: string, coordinates: Array<Array<number> | number>}} geometry
+ * @return {string}
  */
 function toWkt(geometry) {
     if (!geometry) {
