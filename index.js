@@ -191,8 +191,11 @@ metadataButton.addEventListener("click", async () => {
     for(const display of dataForm.querySelectorAll("input")) {
         if (display.id === "sourceSpatialReference") {
             const value = metadata[display.id];
-            const name = await fetchEpsgName(value);
-            display.value = name ? name : value;
+            if (typeof value !== "undefined") {
+                console.log(value);
+                const name = await fetchEpsgName(value);
+                display.value = name ? name : value;
+            }
         } else {
             display.value = metadata[display.id];
         }
@@ -513,7 +516,7 @@ class ServiceMetadata {
     async queries(getGeometry, outputSr=undefined, where=undefined) {
         const geoParams = this.serverType !== "TABLE" && getGeometry ? {
             "geometryType": this.geoType,
-            "outSr": outputSr||this.sourceSpatialReference,
+            "outSr": outputSr||this.sourceSpatialReference||"",
         } : { "returnGeometry": false };
         let queries = [];
         if (this.pagination) {
@@ -597,7 +600,7 @@ class ServiceMetadata {
     async scrapeData(getGeometry, pointXY, extension, epsg=undefined, where=undefined, dateFormat=undefined) {
         const baseUrl = this.url;
         const fields = this.fields;
-        const queries = await this.queries(getGeometry, epsg,where);
+        const queries = await this.queries(getGeometry, epsg, where);
         const queryCount = queries.length;
         if (queryCount === 0) {
             return;
@@ -706,8 +709,11 @@ class ServiceMetadata {
         options.set("serverType", (metadata.type || '').toUpperCase());
         options.set("name", metadata.name || '');
         options.set("maxRecordCount", metadata.maxRecordCount || -1);
-        const spatialReferenceObj = metadata.sourceSpatialReference || {};
-        options.set("spatialReference", spatialReferenceObj.wkid);
+        if ("sourceSpatialReference" in metadata) {
+            options.set("spatialReference", metadata.sourceSpatialReference.wkid);
+        } else if ("extent" in metadata) {
+            options.set("spatialReference", metadata.extent.spatialReference.wkid);
+        }
         // If 'advancedQueryCapabilities' is a key in the base JSON response then get the supported
         // features from that object. If not then try to obtain them from the base JSON
         if (Object.keys(advancedQuery).length > 0) {
