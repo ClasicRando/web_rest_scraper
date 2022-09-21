@@ -759,8 +759,8 @@ class ServiceMetadata {
  */
 function toXY(pointGeometry) {
     return {
-        x: pointGeometry.coordinates[0],
-        y: pointGeometry.coordinates[1],
+        x: pointGeometry?.coordinates[0],
+        y: pointGeometry?.coordinates[1],
     }
 }
 
