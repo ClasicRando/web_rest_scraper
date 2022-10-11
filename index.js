@@ -1,32 +1,34 @@
 const chunkSize = 100;
 /** @type {HTMLInputElement} */
-const baseUrl = document.querySelector("#baseUrl");
+const baseUrl = document.getElementById("baseUrl");
 /** @type {HTMLFormElement} */
-const dataForm = document.querySelector("#dataForm");
+const dataForm = document.getElementById("dataForm");
 /** @type {HTMLFormElement} */
-const exportForm = document.querySelector("#exportForm");
+const exportForm = document.getElementById("exportForm");
 /** @type {HTMLButtonElement} */
-const metadataButton = document.querySelector("#btnMetadata");
+const metadataButton = document.getElementById("btnMetadata");
 /** @type {HTMLButtonElement} */
-const scrapeButton = document.querySelector("#btnScrape");
+const scrapeButton = document.getElementById("btnScrape");
 /** @type {HTMLDivElement} */
-const scrapeButtonRow = document.querySelector("#scrapeButtonRow");
+const scrapeButtonRow = document.getElementById("scrapeButtonRow");
 /** @type {HTMLUListElement} */
-const scrapeOptions = document.querySelector("#scrapeOptions");
+const scrapeOptions = document.getElementById("scrapeOptions");
 /** @type {HTMLDivElement} */
 const scrapeProgressBar = document.querySelector(".progress-bar");
 /** @type {HTMLDivElement} */
 const scrapeProgress = document.querySelector(".progress");
 /** @type {HTMLDivElement} */
-const toastContainer = document.querySelector("#toastContainer");
+const toastContainer = document.getElementById("toastContainer");
 /** @type {HTMLSelectElement} */
-const timeZoneSelector = document.querySelector("#timeZone");
+const timeZoneSelector = document.getElementById("timeZone");
 /** @type {HTMLSelectElement} */
-const dateFormatSelector = document.querySelector("#dateFormat");
+const dateFormatSelector = document.getElementById("dateFormat");
+/** @type {HTMLDivElement} */
+const batchOptions = document.getElementById("batchOptions");
 /** @type {HTMLTableElement} */
 const fieldsTableBody = document.querySelector("#fields tbody");
 /** @type {HTMLDivElement} */
-const pointXYColumn = document.querySelector("#pointXY");
+const pointXYColumn = document.getElementById("pointXY");
 /** @type {ServiceMetadata | null} */
 let metadata = null;
 /** @type {Array<{display: string, func: (date: Date, zone: string) => string}>} */
@@ -34,21 +36,21 @@ const dateFormats = [
     {
         display: "YYYY-MM-DD HH24:Mi:SS Z",
         func: (date, zone) => {
-              const year = new Intl.DateTimeFormat("en-us", { timeZone: zone, year: "numeric"}).format(date);
-              const month = new Intl.DateTimeFormat("en-us", { timeZone: zone, month: "2-digit"}).format(date);
-              const day = new Intl.DateTimeFormat("en-us", { timeZone: zone, day: "2-digit"}).format(date);
-              const hour = new Intl.DateTimeFormat("en-us", { timeZone: zone, hour: "2-digit", hour12: false}).format(date);
-              const minute = new Intl.DateTimeFormat("en-us", { timeZone: zone, minute: "2-digit"}).format(date);
-              const second = new Intl.DateTimeFormat("en-us", { timeZone: zone, second: "2-digit"}).format(date);
-              const timeZone = new Intl.DateTimeFormat("en-us", { timeZone: zone, timeZoneName: "short"}).format(date);
-              const [_, shortZoneName, ...rest] = timeZone.match(/, (.+)$/);
-              return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')} ${shortZoneName}`;
-          }
+            const year = new Intl.DateTimeFormat("en-us", { timeZone: zone, year: "numeric" }).format(date);
+            const month = new Intl.DateTimeFormat("en-us", { timeZone: zone, month: "2-digit" }).format(date);
+            const day = new Intl.DateTimeFormat("en-us", { timeZone: zone, day: "2-digit" }).format(date);
+            const hour = new Intl.DateTimeFormat("en-us", { timeZone: zone, hour: "2-digit", hour12: false }).format(date);
+            const minute = new Intl.DateTimeFormat("en-us", { timeZone: zone, minute: "2-digit" }).format(date);
+            const second = new Intl.DateTimeFormat("en-us", { timeZone: zone, second: "2-digit" }).format(date);
+            const timeZone = new Intl.DateTimeFormat("en-us", { timeZone: zone, timeZoneName: "short" }).format(date);
+            const [_, shortZoneName, ...rest] = timeZone.match(/, (.+)$/);
+            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')} ${shortZoneName}`;
+        }
     }
 ];
 /** @type {Array<string>} */
 const timeZones = Intl.supportedValuesOf('timeZone');
-for(const timeZone of timeZones) {
+for (const timeZone of timeZones) {
     const zoneOption = document.createElement("option");
     zoneOption.value = timeZone;
     zoneOption.innerText = timeZone;
@@ -64,7 +66,7 @@ if (!timeZones.includes("UTC")) {
     zoneOption.setAttribute("selected", "");
     timeZoneSelector.appendChild(zoneOption);
 }
-for(const [i, dateFormat] of dateFormats.entries()) {
+for (const [i, dateFormat] of dateFormats.entries()) {
     const formatOption = document.createElement("option");
     formatOption.value = i.toString();
     formatOption.innerText = dateFormat.display;
@@ -106,6 +108,32 @@ function removeAllChildren(element) {
 }
 
 /**
+ * @param {number} until
+ * @param {(index: number) => any} func
+ * @returns {Array<any>}
+ */
+function mapRange(until, func) {
+    const result = [];
+    for (let i = 0; i < until; i++) {
+        result.push(func(i));
+    }
+    return result;
+}
+
+/**
+ * @param {Array<T>} array
+ * @param {number} size
+ * @returns {Array<Array<T>>}
+ */
+function chunked(array, size) {
+    const result = [];
+    for (let i = 0; i < array.length; i += size) {
+        result.push(array.slice(i, i + size));
+    }
+    return result;
+};
+
+/**
  * 
  * @param {number} milliseconds 
  * @returns {Promise<void>}
@@ -138,7 +166,7 @@ async function postToast(message) {
     await bToast.show();
 }
 
-exportForm.querySelector("#chkDate").addEventListener("change", async (e) => {
+exportForm.querySelector("#chkDate").addEventListener("change", (e) => {
     const dateInput = exportForm.querySelector("select[name=dateFormat]");
     const timeZoneInput = exportForm.querySelector("select[name=timeZone]");
     if (e.target.checked) {
@@ -153,23 +181,21 @@ exportForm.querySelector("#chkDate").addEventListener("change", async (e) => {
         timeZoneInput.setAttribute("disabled", "");
     }
 });
-exportForm.querySelector("#chkWhere").addEventListener("change", async (e) => {
+exportForm.querySelector("#chkWhere").addEventListener("change", (e) => {
     const whereInput = exportForm.querySelector("input[name=where]");
+    whereInput.value = "";
     if (e.target.checked) {
-        whereInput.value = "";
         whereInput.removeAttribute("disabled");
     } else {
-        whereInput.value = "";
         whereInput.setAttribute("disabled", "");
     }
 });
-exportForm.querySelector("#chkOutSr").addEventListener("change", async (e) => {
+exportForm.querySelector("#chkOutSr").addEventListener("change", (e) => {
     const outSrInput = exportForm.querySelector("input[name=outSr]");
+    outSrInput.value = "";
     if (e.target.checked) {
-        outSrInput.value = "";
         outSrInput.removeAttribute("disabled");
     } else {
-        outSrInput.value = "";
         outSrInput.setAttribute("disabled", "");
     }
 });
@@ -188,7 +214,12 @@ metadataButton.addEventListener("click", async () => {
     } else {
         pointXYColumn.setAttribute("hidden", "");
     }
-    for(const display of dataForm.querySelectorAll("input")) {
+    if (metadata.supportsBatchOptions) {
+        batchOptions.removeAttribute("hidden");
+    } else {
+        batchOptions.setAttribute("hidden", "");
+    }
+    for (const display of dataForm.querySelectorAll("input")) {
         if (display.id === "sourceSpatialReference") {
             const value = metadata[display.id];
             const name = await fetchEpsgName(value);
@@ -198,7 +229,7 @@ metadataButton.addEventListener("click", async () => {
         }
     }
     removeAllChildren(fieldsTableBody);
-    for(const field of metadata.fields) {
+    for (const field of metadata.fields) {
         const fieldRow = document.createElement("tr");
         const fieldName = document.createElement("td");
         fieldName.innerText = field.name;
@@ -219,12 +250,12 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
     const scrapeType = element.innerText;
     element.addEventListener("click", async () => {
         const exportData = new FormData(exportForm);
-        const outputSr = (exportData.get("outSr")||"").trim();
+        const outputSr = (exportData.get("outSr") || "").trim();
         if (outputSr && !outputSr.match(/^\d+$/)) {
             await postToast("\"Output Spatial Reference\" must be a number");
             return;
         }
-        const whereQuery = (exportData.get("where")||"").trim();
+        const whereQuery = (exportData.get("where") || "").trim();
         const formatDates = exportForm.querySelector("#chkDate");
         const dateFormat = exportData.get("dateFormat");
         const timeZone = exportData.get("timeZone");
@@ -276,7 +307,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
  * @param {number} epsg
  * @returns {Promise<string>}
  */
- async function fetchEpsgName(epsg) {
+async function fetchEpsgName(epsg) {
     const response = await fetch(`https://epsg.io/${epsg}`);
     if (!response.ok) {
         return "";
@@ -330,7 +361,7 @@ async function fetchJson(baseUrl, params) {
     }
     return {
         ok: !("error" in json),
-        error: (json.error||{message: ""}).message,
+        error: (json.error || { message: "" }).message,
         payload: json,
     }
 }
@@ -365,7 +396,7 @@ function maxMinQueryUrlParams(oidField) {
  * @param {string} where
  * @returns {Promise<Array<number>>}
  */
-async function objectIdsQuery(baseUrl, where="1=1") {
+async function objectIdsQuery(baseUrl, where = "1=1") {
     const response = await fetchJson(`${baseUrl}/query`, idQueryUrlParams(where));
     return response.ok ? response.payload.objectIds : [-1, -1];
 }
@@ -405,7 +436,7 @@ async function maxMinQuery(baseUrl, oidField, stats) {
  * @param {string} where
  * @returns {Promise<number | string>}
  */
-async function countQuery(baseUrl, where="1=1") {
+async function countQuery(baseUrl, where = "1=1") {
     const response = await fetchJson(`${baseUrl}/query`, countQueryUrlParams(where));
     return response.ok && "count" in response.payload
         ? response.payload.count
@@ -418,7 +449,7 @@ async function countQuery(baseUrl, where="1=1") {
  * @returns {Promise<Object | string>}
  */
 async function metadataRequest(baseUrl) {
-    const response = await fetchJson(baseUrl, new URLSearchParams({"f": "json"}));
+    const response = await fetchJson(baseUrl, new URLSearchParams({ "f": "json" }));
     return response.ok ? response.payload : response.error;
 }
 
@@ -429,13 +460,13 @@ class ServiceField {
      * @param {string} type 
      * @param {Map<string | number, string> | undefined} codes 
      */
-    constructor(name, type, codes=undefined) {
+    constructor(name, type, codes = undefined) {
         /** @type {string} */
         this.name = name;
         /** @type {string} */
         this.type = type;
         /** @type {Map<string | number, string>} */
-        this.codes = codes||new Map();
+        this.codes = codes || new Map();
     }
 
     get isCoded() {
@@ -510,12 +541,11 @@ class ServiceMetadata {
      * @param {string | undefined} where
      * @returns {Promise<Array<string>>}
      */
-    async queries(getGeometry, outputSr=undefined, where=undefined) {
+    async queries(getGeometry, outputSr = undefined, where = undefined) {
         const geoParams = this.serverType !== "TABLE" && getGeometry ? {
             "geometryType": this.geoType,
-            "outSr": outputSr||this.sourceSpatialReference,
+            "outSr": outputSr || this.sourceSpatialReference,
         } : { "returnGeometry": false };
-        let queries = [];
         if (this.pagination) {
             let queryCount = -1;
             if (where) {
@@ -524,29 +554,27 @@ class ServiceMetadata {
                     await postToast(`Error:\n${whereCount}`);
                     return queries;
                 }
-                console.log(whereCount);
-                console.log(this.maxQueryCount);
-                queryCount = whereCount/this.maxQueryCount;
+                queryCount = whereCount / this.maxQueryCount;
             } else {
-                queryCount = this.sourceCount/this.maxQueryCount;
+                queryCount = this.sourceCount / this.maxQueryCount;
             }
-            queries = [...Array(Math.ceil(queryCount)).keys()].map(i => {
+            return mapRange(Math.ceil(queryCount), (i) => {
                 const params = new URLSearchParams({
-                    'where': where||'1=1',
+                    'where': where || '1=1',
                     'resultOffset': i * this.maxQueryCount,
                     'resultRecordCount': this.maxQueryCount,
                     'outFields': '*',
                     'f': 'geojson'
                 });
                 for (const [name, value] of Object.entries(geoParams)) {
-                    params.append(name,value);
+                    params.append(name, value);
                 }
                 return params;
             });
         }
-        else if (this.incrementalOid && !where) {
+        if (this.incrementalOid && !where) {
             const max = this.maxMinOid.max, min = this.maxMinOid.min;
-            queries = [...Array(Math.ceil((max - min + 1) / this.maxQueryCount)).keys()].map(i => {
+            return mapRange(Math.ceil((max - min + 1) / this.maxQueryCount), (i) => {
                 let minOid = min + (i * this.maxQueryCount);
                 const params = new URLSearchParams({
                     'where': `${this.oidField} >= ${minOid} and ${this.oidField} <= ${minOid + this.maxQueryCount - 1}`,
@@ -554,14 +582,15 @@ class ServiceMetadata {
                     'f': 'geojson'
                 });
                 for (const [name, value] of Object.entries(geoParams)) {
-                    params.append(name,value);
+                    params.append(name, value);
                 }
                 return params;
             });
         }
-        else if (this.oidField) {
+        if (this.oidField) {
+            const queries = [];
             const objectIds = await objectIdsQuery(this.url, where);
-            if (objectIds[0]||-1 != -1) {
+            if (objectIds[0] || -1 != -1) {
                 for (let i = 0; i < objectIds.length; i += chunkSize) {
                     const chunk = objectIds.slice(i, i + chunkSize);
                     const params = new URLSearchParams({
@@ -570,13 +599,14 @@ class ServiceMetadata {
                         'f': 'geojson'
                     });
                     for (const [name, value] of Object.entries(geoParams)) {
-                        params.append(name,value);
+                        params.append(name, value);
                     }
                     queries.push(params)
                 }
             }
+            return queries;
         }
-        return queries;
+        return [];
     }
 
     get fieldLabels() {
@@ -594,53 +624,63 @@ class ServiceMetadata {
      * @param {string} where
      * @param {{format: (date: Date) => string, zone: string}} dateFormat
      */
-    async scrapeData(getGeometry, pointXY, extension, epsg=undefined, where=undefined, dateFormat=undefined) {
+    async scrapeData(
+        getGeometry,
+        pointXY,
+        extension,
+        epsg = undefined,
+        where = undefined,
+        dateFormat = undefined,
+    ) {
         const baseUrl = this.url;
         const fields = this.fields;
-        const queries = await this.queries(getGeometry, epsg,where);
+        const queries = await this.queries(getGeometry, epsg, where);
         const queryCount = queries.length;
         if (queryCount === 0) {
             return;
         }
         let queriesComplete = 0;
-        const tasks = queries.map(query => {
-            const url = new URL(`${baseUrl}/query`);
-            url.search = query.toString();
-            return fetchQuery(url)
-        });
-        const result = await tasks.reduce(async (previous, nextTask) => {
-            const accum = await previous;
-            const result = await nextTask;
-            if (typeof(fields.find(field => field.codes)) !== "undefined") {
-                for(const feature of result.features) {
-                    for (const field of fields) {
-                        if (field.codes.size > 0) {
-                            const code = feature.properties[field.name];
-                            feature.properties[`${field.name}_DESC`] = field.codes.get(code)||"";
-                        }
-                        else if (field.type === "esriFieldTypeDate" && dateFormat) {
-                            const date = feature.properties[field.name];
-                            const fDate = dateFormat.format(new Date(date), dateFormat.zone);
-                            feature.properties[`${field.name}_DT`] = fDate;
+        let resultObj = {};
+        for (const chunk of chunked(queries, 20)) {
+            const tasks = chunk.map(query => {
+                const url = new URL(`${baseUrl}/query`);
+                url.search = query.toString();
+                return fetchQuery(url)
+            });
+            resultObj = await tasks.reduce(async (previous, nextTask) => {
+                const accum = await previous;
+                const result = await nextTask;
+                if (typeof (fields.find(field => field.codes)) !== "undefined") {
+                    for (const feature of result.features) {
+                        for (const field of fields) {
+                            if (field.codes.size > 0) {
+                                const code = feature.properties[field.name];
+                                feature.properties[`${field.name}_DESC`] = field.codes.get(code) || "";
+                            }
+                            else if (field.type === "esriFieldTypeDate" && dateFormat) {
+                                const date = feature.properties[field.name];
+                                const fDate = dateFormat.format(new Date(date), dateFormat.zone);
+                                feature.properties[`${field.name}_DT`] = fDate;
+                            }
                         }
                     }
                 }
-            }
-            if (Object.keys(accum).length == 0) {
-                scrapeProgressBar.style.width = `${Math.round((++queriesComplete/queryCount)*100)}%`;
-                return {
-                    "crs": result.crs,
-                    "features": result.features,
-                    "type": result.type,
-                };
-            }
-            accum.features = [...accum.features, ...result.features];
-            scrapeProgressBar.style.width = `${Math.round((++queriesComplete/queryCount)*100)}%`;
-            return accum;
-        }, Promise.resolve({}));
+                if (Object.keys(accum).length == 0) {
+                    scrapeProgressBar.style.width = `${Math.round((++queriesComplete / queryCount) * 100)}%`;
+                    return {
+                        "crs": result.crs,
+                        "features": result.features,
+                        "type": result.type,
+                    };
+                }
+                accum.features = [...accum.features, ...result.features];
+                scrapeProgressBar.style.width = `${Math.round((++queriesComplete / queryCount) * 100)}%`;
+                return accum;
+            }, Promise.resolve(resultObj));
+        }
         const download = document.createElement("a");
         if (extension === "csv") {
-            const records = result.features.map(feature => {
+            const records = resultObj.features.map(feature => {
                 if (getGeometry) {
                     if (pointXY) {
                         const xy = toXY(feature.geometry);
@@ -654,25 +694,25 @@ class ServiceMetadata {
             });
             const parseOptions = {
                 quotes: false,
-            	quoteChar: '"',
-            	escapeChar: '"',
-            	delimiter: ",",
-            	header: true,
-            	newline: "\n",
-            	skipEmptyLines: false,
-            	columns: null
+                quoteChar: '"',
+                escapeChar: '"',
+                delimiter: ",",
+                header: true,
+                newline: "\n",
+                skipEmptyLines: false,
+                columns: null
             }
             const file = new Blob(["\ufeff", Papa.unparse(records, parseOptions), "\u000A"]);
             download.href = URL.createObjectURL(file);
         } else if (extension === "geojson") {
-            const features = result.features.map(feature => JSON.stringify(feature)).join(",\n");
-            const crs = JSON.stringify(result.crs);
+            const features = resultObj.features.map(feature => JSON.stringify(feature)).join(",\n");
+            const crs = JSON.stringify(resultObj.crs);
             const records = '{\n"type": "Feature Collection",\n"crs": ' + crs + ',\n"features": [\n' + features + '\n]\n}\n';
             const file = new Blob(["\ufeff", records]);
             download.href = URL.createObjectURL(file);
         }
         download.download = `${this.name}.${extension}`;
-    
+
         document.body.appendChild(download);
         download.click();
         document.body.removeChild(download);
@@ -686,17 +726,17 @@ class ServiceMetadata {
     static async fromBaseUrl(url) {
         const options = new Map([["url", url]]);
         let incOid = false;
-    
+
         // Get count from service when querying all features
         const count = await countQuery(url);
-        if (typeof(count) === "string") {
+        if (typeof (count) === "string") {
             return count;
         }
         options.set("sourceCount", count);
-    
+
         // Get JSON data about service. Provides information for scraping
         const metadata = await metadataRequest(url);
-        if (typeof(metadata) === "string") {
+        if (typeof (metadata) === "string") {
             return metadata;
         }
         if ("error" in metadata) {
