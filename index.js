@@ -1,4 +1,5 @@
-const chunkSize = 100;
+const objectIdChunkSize = 100;
+const defaultBatchSize = 20;
 /** @type {HTMLInputElement} */
 const baseUrl = document.getElementById("baseUrl");
 /** @type {HTMLFormElement} */
@@ -23,8 +24,6 @@ const toastContainer = document.getElementById("toastContainer");
 const timeZoneSelector = document.getElementById("timeZone");
 /** @type {HTMLSelectElement} */
 const dateFormatSelector = document.getElementById("dateFormat");
-/** @type {HTMLDivElement} */
-const batchOptions = document.getElementById("batchOptions");
 /** @type {HTMLTableElement} */
 const fieldsTableBody = document.querySelector("#fields tbody");
 /** @type {HTMLDivElement} */
@@ -134,6 +133,45 @@ function chunked(array, size) {
 };
 
 /**
+ * @param {Array<T>} array
+ * @returns {Array<T>}
+ */
+function distinctObjects(array) {
+    const length = array.length;
+    if (length === 0) {
+        return array;
+    }
+    const elementType = typeof (array[0]);
+    if (elementType === "string") {
+        return Array.from(new Set(array));
+    }
+    const result = [];
+    const found = new Set();
+    for (let i = 0; i < length; i++) {
+        const key = Object.values(array[i]).join("-");
+        if (!found.has(key)) {
+            found.add(key);
+            result.push(array[i]);
+        }
+    }
+    return result;
+}
+
+/**
+ * @param {string} value
+ */
+function parseToInt(value) {
+    if (!value.trim()) {
+        return defaultBatchSize;
+    }
+    try {
+        return parseInt(value.trim(), 10);
+    } catch (ex) {
+        return null;
+    }
+}
+
+/**
  * 
  * @param {number} milliseconds 
  * @returns {Promise<void>}
@@ -214,11 +252,6 @@ metadataButton.addEventListener("click", async () => {
     } else {
         pointXYColumn.setAttribute("hidden", "");
     }
-    if (metadata.supportsBatchOptions) {
-        batchOptions.removeAttribute("hidden");
-    } else {
-        batchOptions.setAttribute("hidden", "");
-    }
     for (const display of dataForm.querySelectorAll("input")) {
         if (display.id === "sourceSpatialReference") {
             const value = metadata[display.id];
@@ -261,6 +294,11 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         const timeZone = exportData.get("timeZone");
         const getGeometry = exportData.get("includeGeometry");
         const pointXY = exportData.get("pointXY");
+        const batchSize = parseToInt(exportData.get("batch"));
+        if (batchSize == null) {
+            await postToast("Batch size is not a valid number");
+            return;
+        }
         scrapeOptions.setAttribute("hidden", "");
         scrapeButton.setAttribute("hidden", "");
         scrapeProgress.removeAttribute("hidden");
@@ -271,6 +309,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
                     getGeometry === "y",
                     pointXY === "y" && metadata.geoType === "esriGeometryPoint",
                     "csv",
+                    batchSize,
                     outputSr ? outputSr : undefined,
                     whereQuery ? whereQuery : undefined,
                     formatDates.checked ? {
@@ -284,6 +323,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
                     getGeometry === "y",
                     pointXY === "y" && metadata.geoType === "esriGeometryPoint",
                     "geojson",
+                    batchSize,
                     outputSr ? outputSr : undefined,
                     whereQuery ? whereQuery : undefined,
                     dateFormat ? {
@@ -591,8 +631,8 @@ class ServiceMetadata {
             const queries = [];
             const objectIds = await objectIdsQuery(this.url, where);
             if (objectIds[0] || -1 != -1) {
-                for (let i = 0; i < objectIds.length; i += chunkSize) {
-                    const chunk = objectIds.slice(i, i + chunkSize);
+                for (let i = 0; i < objectIds.length; i += objectIdChunkSize) {
+                    const chunk = objectIds.slice(i, i + objectIdChunkSize);
                     const params = new URLSearchParams({
                         'objectIds': chunk.join(","),
                         'outFields': '*',
@@ -628,6 +668,7 @@ class ServiceMetadata {
         getGeometry,
         pointXY,
         extension,
+        batchSize,
         epsg = undefined,
         where = undefined,
         dateFormat = undefined,
@@ -641,7 +682,7 @@ class ServiceMetadata {
         }
         let queriesComplete = 0;
         let resultObj = {};
-        for (const chunk of chunked(queries, 20)) {
+        for (const chunk of chunked(queries, batchSize)) {
             const tasks = chunk.map(query => {
                 const url = new URL(`${baseUrl}/query`);
                 url.search = query.toString();
@@ -665,33 +706,37 @@ class ServiceMetadata {
                         }
                     }
                 }
+                const featuresMapped = distinctObjects(
+                    extension === "csv"
+                    ? result.features.map(feature => {
+                        if (getGeometry) {
+                            if (pointXY) {
+                                const xy = toXY(feature.geometry);
+                                feature.properties.x = xy.x;
+                                feature.properties.y = xy.y;
+                            } else {
+                                feature.properties.geometry = toWkt(feature.geometry);
+                            }
+                        }
+                        return feature.properties;
+                    })
+                    : result.features.map(feature => JSON.stringify(feature))
+                );
                 if (Object.keys(accum).length == 0) {
                     scrapeProgressBar.style.width = `${Math.round((++queriesComplete / queryCount) * 100)}%`;
                     return {
                         "crs": result.crs,
-                        "features": result.features,
+                        "features": featuresMapped,
                         "type": result.type,
                     };
                 }
-                accum.features = [...accum.features, ...result.features];
+                accum.features = [...accum.features, ...featuresMapped];
                 scrapeProgressBar.style.width = `${Math.round((++queriesComplete / queryCount) * 100)}%`;
                 return accum;
             }, Promise.resolve(resultObj));
         }
         const download = document.createElement("a");
         if (extension === "csv") {
-            const records = resultObj.features.map(feature => {
-                if (getGeometry) {
-                    if (pointXY) {
-                        const xy = toXY(feature.geometry);
-                        feature.properties.x = xy.x;
-                        feature.properties.y = xy.y;
-                    } else {
-                        feature.properties.geometry = toWkt(feature.geometry);
-                    }
-                }
-                return feature.properties;
-            });
             const parseOptions = {
                 quotes: false,
                 quoteChar: '"',
@@ -701,11 +746,11 @@ class ServiceMetadata {
                 newline: "\n",
                 skipEmptyLines: false,
                 columns: null
-            }
-            const file = new Blob(["\ufeff", Papa.unparse(records, parseOptions), "\u000A"]);
+            };
+            const file = new Blob(["\ufeff", Papa.unparse(resultObj.features, parseOptions), "\u000A"]);
             download.href = URL.createObjectURL(file);
         } else if (extension === "geojson") {
-            const features = resultObj.features.map(feature => JSON.stringify(feature)).join(",\n");
+            const features = resultObj.features.join(",\n");
             const crs = JSON.stringify(resultObj.crs);
             const records = '{\n"type": "Feature Collection",\n"crs": ' + crs + ',\n"features": [\n' + features + '\n]\n}\n';
             const file = new Blob(["\ufeff", records]);
@@ -875,8 +920,8 @@ async function fetchQuery(url) {
             await new Promise(resolve => setTimeout(resolve, 10000));
             tryNumber++;
         }
-        // Current max number of tries is 10. After that an error is thrown
-        if (tryNumber > 10) {
+        // Current max number of tries is 5. After that an error is thrown
+        if (tryNumber > 5) {
             throw Error(`Too many tries to fetch query (${url.href})`);
         }
     }
