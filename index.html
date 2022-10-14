@@ -17,7 +17,11 @@
             <div class="row">
                 <div class="alert alert-light border" role="alert" style="font-size: small;">
                     <p>Scape entire feature collections from ArcGIS REST Services using various querying methods.</p>
-                    <p>NOTE: This application is very much in a beta state and I cannot guarentee that every service will cooperate or produce valid results.</p>
+                    <p>NOTE</p>
+                    <ul>
+                        <li>This application is very much in a beta state and I cannot guarentee that every service will cooperate or produce valid results.</li>
+                        <li>Currently the output has a distinct on all fields (including geometry) so the number of records might not match the feature count returned from the service.</li>
+                    </ul>
                     <p>If you find any bugs please submit an issue using the <a href="https://github.com/ClasicRando/web_rest_scraper/issues">github page</a></p>
                 </div>
             </div>
@@ -121,12 +125,18 @@
                         <div class="col">
                             <div class="input-group mb-3">
                                 <span class="input-group-text">Retries</span>
-                                <input type="number" class="form-control" name="retry" placeholder="(Default 5)" aria-label="retry">
+                                <input type="text" class="form-control" name="retry" placeholder="(Default 5)" aria-label="retry">
                             </div>
                         </div>
                         <div class="col">
                             <div class="input-group mb-3">
-                                <span class="input-group-text">Include Geometry</span>
+                                <span class="input-group-text">Batch Size</span>
+                                <input type="text" class="form-control" name="batch" placeholder="(Default 20)" aria-label="batch">
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="input-group mb-3">
+                                <span class="input-group-text">Geometry?</span>
                                 <select class="form-select" name="includeGeometry" aria-label="includeGeometry">
                                     <option value="y" selected>Yes</option>
                                     <option value="n">No</option>
@@ -136,7 +146,7 @@
                         <div id="pointXY" class="col" hidden>
                             <div class="input-group mb-3">
                                 <span class="input-group-text">Point as X/Y?</span>
-                                <select class="form-select" name="pointXY" aria-label="includeGeometry">
+                                <select class="form-select" name="pointXY" aria-label="pointXY">
                                     <option value="y" selected>Yes</option>
                                     <option value="n">No</option>
                                 </select>
