@@ -133,31 +133,6 @@ function chunked(array, size) {
 };
 
 /**
- * @param {Array<T>} array
- * @returns {Array<T>}
- */
-function distinctObjects(array) {
-    const length = array.length;
-    if (length === 0) {
-        return array;
-    }
-    const elementType = typeof (array[0]);
-    if (elementType === "string") {
-        return Array.from(new Set(array));
-    }
-    const result = [];
-    const found = new Set();
-    for (let i = 0; i < length; i++) {
-        const key = Object.values(array[i]).join("-");
-        if (!found.has(key)) {
-            found.add(key);
-            result.push(array[i]);
-        }
-    }
-    return result;
-}
-
-/**
  * @param {string} value
  */
 function parseToInt(value) {
@@ -706,8 +681,7 @@ class ServiceMetadata {
                         }
                     }
                 }
-                const featuresMapped = distinctObjects(
-                    extension === "csv"
+                const featuresMapped = extension === "csv"
                     ? result.features.map(feature => {
                         if (getGeometry) {
                             if (pointXY) {
@@ -720,8 +694,7 @@ class ServiceMetadata {
                         }
                         return feature.properties;
                     })
-                    : result.features.map(feature => JSON.stringify(feature))
-                );
+                    : result.features.map(feature => JSON.stringify(feature));
                 if (Object.keys(accum).length == 0) {
                     scrapeProgressBar.style.width = `${Math.round((++queriesComplete / queryCount) * 100)}%`;
                     return {
