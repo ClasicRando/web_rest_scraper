@@ -28,6 +28,8 @@ const dateFormatSelector = document.getElementById("dateFormat");
 const fieldsTableBody = document.querySelector("#fields tbody");
 /** @type {HTMLDivElement} */
 const pointXYColumn = document.getElementById("pointXY");
+/** @type {HTMLDivElement} */
+const includeGeometryColumn = document.getElementById("includeGeometry");
 /** @type {ServiceMetadata | null} */
 let metadata = null;
 /** @type {Array<{display: string, func: (date: Date, zone: string) => string}>} */
@@ -227,8 +229,13 @@ metadataButton.addEventListener("click", async () => {
     } else {
         pointXYColumn.setAttribute("hidden", "");
     }
+    if (metadata.serverType === "TABLE") {
+        includeGeometryColumn.setAttribute("hidden", "");
+    } else {
+        includeGeometryColumn.removeAttribute("hidden");
+    }
     for (const display of dataForm.querySelectorAll("input")) {
-        if (display.id === "sourceSpatialReference") {
+        if (display.id === "sourceSpatialReference" && metadata.serverType !== "TABLE") {
             const value = metadata[display.id];
             const name = await fetchEpsgName(value);
             display.value = name ? name : value;
