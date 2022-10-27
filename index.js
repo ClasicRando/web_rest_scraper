@@ -223,6 +223,7 @@ metadataButton.addEventListener("click", async () => {
     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true">
     </span><span class="visually-hidden">Loading...</span>`;
     metadata = await ServiceMetadata.fromBaseUrl(baseUrl.value);
+    console.log(metadata);
     metadataButton.innerHTML = '<i class="fa-solid fa-server"></i>';
     if (metadata.geoType === "esriGeometryPoint") {
         pointXYColumn.removeAttribute("hidden");
@@ -235,12 +236,12 @@ metadataButton.addEventListener("click", async () => {
         includeGeometryColumn.removeAttribute("hidden");
     }
     for (const display of dataForm.querySelectorAll("input")) {
-        if (display.id === "sourceSpatialReference" && metadata.serverType !== "TABLE") {
+        if (display.id === "sourceSpatialReference" && metadata.serverType !== "TABLE" && metadata.sourceSpatialReference) {
             const value = metadata[display.id];
             const name = await fetchEpsgName(value);
             display.value = name ? name : value;
         } else {
-            display.value = metadata[display.id];
+            display.value = metadata[display.id]||"";
         }
     }
     removeAllChildren(fieldsTableBody);
@@ -767,11 +768,12 @@ class ServiceMetadata {
         if ("error" in metadata) {
             return {};
         }
+        console.log(metadata);
         const advancedQuery = metadata.advancedQueryCapabilities || {};
         options.set("serverType", (metadata.type || '').toUpperCase());
         options.set("name", metadata.name || '');
         options.set("maxRecordCount", metadata.maxRecordCount || -1);
-        const spatialReferenceObj = metadata.sourceSpatialReference || {};
+        const spatialReferenceObj = metadata.sourceSpatialReference || metadata.extent?.spatialReference || {};
         options.set("spatialReference", spatialReferenceObj.wkid);
         // If 'advancedQueryCapabilities' is a key in the base JSON response then get the supported
         // features from that object. If not then try to obtain them from the base JSON
