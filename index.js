@@ -235,12 +235,12 @@ metadataButton.addEventListener("click", async () => {
         includeGeometryColumn.removeAttribute("hidden");
     }
     for (const display of dataForm.querySelectorAll("input")) {
-        if (display.id === "sourceSpatialReference" && metadata.serverType !== "TABLE") {
+        if (display.id === "sourceSpatialReference" && metadata.serverType !== "TABLE" && metadata.sourceSpatialReference) {
             const value = metadata[display.id];
             const name = await fetchEpsgName(value);
             display.value = name ? name : value;
         } else {
-            display.value = metadata[display.id];
+            display.value = metadata[display.id]||"";
         }
     }
     removeAllChildren(fieldsTableBody);
@@ -771,7 +771,7 @@ class ServiceMetadata {
         options.set("serverType", (metadata.type || '').toUpperCase());
         options.set("name", metadata.name || '');
         options.set("maxRecordCount", metadata.maxRecordCount || -1);
-        const spatialReferenceObj = metadata.sourceSpatialReference || {};
+        const spatialReferenceObj = metadata.sourceSpatialReference || metadata.extent?.spatialReference || {};
         options.set("spatialReference", spatialReferenceObj.wkid);
         // If 'advancedQueryCapabilities' is a key in the base JSON response then get the supported
         // features from that object. If not then try to obtain them from the base JSON
@@ -883,7 +883,6 @@ async function fetchQuery(url) {
                 json = await response.json();
                 if (!("features" in json)) {
                     if ("error" in json) {
-                        console.log('Request had an error. Retrying', url);
                         postToast('Request had an error. Retrying');
                         invalidResponse = true;
                         await new Promise(resolve => setTimeout(resolve, 10000));
