@@ -223,7 +223,6 @@ metadataButton.addEventListener("click", async () => {
     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true">
     </span><span class="visually-hidden">Loading...</span>`;
     metadata = await ServiceMetadata.fromBaseUrl(baseUrl.value);
-    console.log(metadata);
     metadataButton.innerHTML = '<i class="fa-solid fa-server"></i>';
     if (metadata.geoType === "esriGeometryPoint") {
         pointXYColumn.removeAttribute("hidden");
@@ -768,7 +767,6 @@ class ServiceMetadata {
         if ("error" in metadata) {
             return {};
         }
-        console.log(metadata);
         const advancedQuery = metadata.advancedQueryCapabilities || {};
         options.set("serverType", (metadata.type || '').toUpperCase());
         options.set("name", metadata.name || '');
@@ -885,7 +883,6 @@ async function fetchQuery(url) {
                 json = await response.json();
                 if (!("features" in json)) {
                     if ("error" in json) {
-                        console.log('Request had an error. Retrying', url);
                         postToast('Request had an error. Retrying');
                         invalidResponse = true;
                         await new Promise(resolve => setTimeout(resolve, 10000));
