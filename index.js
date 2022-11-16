@@ -1,5 +1,9 @@
 const objectIdChunkSize = 100;
 const defaultBatchSize = 20;
+const lastToast = {
+    message: "",
+    time: Date.now(),
+};
 /** @type {HTMLInputElement} */
 const baseUrl = document.getElementById("baseUrl");
 /** @type {HTMLFormElement} */
@@ -158,6 +162,12 @@ async function sleep(milliseconds) {
 }
 
 async function postToast(message) {
+    const current_time = Date.now();
+    if (lastToast.message == message && current_time - lastToast.time < 10000) {
+        return;
+    }
+    lastToast.message = message;
+    lastToast.time = current_time;
     const toast = document.createElement("div");
     toast.classList.add("toast");
     toast.setAttribute("role", "alert");
