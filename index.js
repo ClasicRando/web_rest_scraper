@@ -244,7 +244,6 @@ metadataButton.addEventListener("click", async () => {
         document.getElementById("chkOutSr").closest(".row").setAttribute("hidden", "");
     } else {
         includeGeometryColumn.removeAttribute("hidden");
-        document.getElementById("chkOutSr").closest(".row");
         document.getElementById("chkOutSr").closest(".row").removeAttribute("hidden");
     }
     for (const display of dataForm.querySelectorAll("input")) {
