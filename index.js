@@ -1,5 +1,9 @@
 const objectIdChunkSize = 100;
 const defaultBatchSize = 20;
+const lastToast = {
+    message: "",
+    time: Date.now(),
+};
 /** @type {HTMLInputElement} */
 const baseUrl = document.getElementById("baseUrl");
 /** @type {HTMLFormElement} */
@@ -158,6 +162,12 @@ async function sleep(milliseconds) {
 }
 
 async function postToast(message) {
+    const current_time = Date.now();
+    if (lastToast.message == message && current_time - lastToast.time < 10000) {
+        return;
+    }
+    lastToast.message = message;
+    lastToast.time = current_time;
     const toast = document.createElement("div");
     toast.classList.add("toast");
     toast.setAttribute("role", "alert");
@@ -231,8 +241,10 @@ metadataButton.addEventListener("click", async () => {
     }
     if (metadata.serverType === "TABLE") {
         includeGeometryColumn.setAttribute("hidden", "");
+        document.getElementById("chkOutSr").closest(".row").setAttribute("hidden", "");
     } else {
         includeGeometryColumn.removeAttribute("hidden");
+        document.getElementById("chkOutSr").closest(".row").removeAttribute("hidden");
     }
     for (const display of dataForm.querySelectorAll("input")) {
         if (display.id === "sourceSpatialReference" && metadata.serverType !== "TABLE" && metadata.sourceSpatialReference) {
@@ -240,7 +252,7 @@ metadataButton.addEventListener("click", async () => {
             const name = await fetchEpsgName(value);
             display.value = name ? name : value;
         } else {
-            display.value = metadata[display.id]||"";
+            display.value = metadata[display.id] || "";
         }
     }
     removeAllChildren(fieldsTableBody);
@@ -288,7 +300,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
         switch (scrapeType) {
             case "CSV":
                 await metadata.scrapeData(
-                    getGeometry === "y",
+                    getGeometry === "y" && !includeGeometryColumn.hidden,
                     pointXY === "y" && metadata.geoType === "esriGeometryPoint",
                     "csv",
                     batchSize,
@@ -302,7 +314,7 @@ scrapeButton.parentElement.querySelectorAll('li').forEach((element) => {
                 break;
             case "GeoJSON":
                 await metadata.scrapeData(
-                    getGeometry === "y",
+                    getGeometry === "y" && !includeGeometryColumn.hidden,
                     pointXY === "y" && metadata.geoType === "esriGeometryPoint",
                     "geojson",
                     batchSize,
@@ -527,6 +539,8 @@ class ServiceMetadata {
         this.maxMinOid = options.get("maxMinOid");
         /** @type {number} */
         this.sourceSpatialReference = options.get("spatialReference");
+        /** @type {Array<string>} */
+        this.queryFormats = options.get("queryFormats").map(f => f.toLowerCase());
     }
 
     /**
@@ -557,6 +571,19 @@ class ServiceMetadata {
     }
 
     /**
+     * @returns { string }
+     */
+    get format() {
+        if ("geojson" in this.queryFormats) {
+            return "geojson";
+        }
+        if ("json" in this.queryFormats) {
+            return "json";
+        }
+        return this.queryFormats[0];
+    }
+
+    /**
      * 
      * @param {boolean} getGeometry
      * @param {number} outputSr 
@@ -568,6 +595,7 @@ class ServiceMetadata {
             "geometryType": this.geoType,
             "outSr": outputSr || this.sourceSpatialReference,
         } : { "returnGeometry": false };
+        const format = this.format;
         if (this.pagination) {
             let queryCount = -1;
             if (where) {
@@ -586,7 +614,7 @@ class ServiceMetadata {
                     'resultOffset': i * this.maxQueryCount,
                     'resultRecordCount': this.maxQueryCount,
                     'outFields': '*',
-                    'f': 'geojson'
+                    'f': format
                 });
                 for (const [name, value] of Object.entries(geoParams)) {
                     params.append(name, value);
@@ -601,7 +629,7 @@ class ServiceMetadata {
                 const params = new URLSearchParams({
                     'where': `${this.oidField} >= ${minOid} and ${this.oidField} <= ${minOid + this.maxQueryCount - 1}`,
                     'outFields': '*',
-                    'f': 'geojson'
+                    'f': format
                 });
                 for (const [name, value] of Object.entries(geoParams)) {
                     params.append(name, value);
@@ -618,7 +646,7 @@ class ServiceMetadata {
                     const params = new URLSearchParams({
                         'objectIds': chunk.join(","),
                         'outFields': '*',
-                        'f': 'geojson'
+                        'f': format
                     });
                     for (const [name, value] of Object.entries(geoParams)) {
                         params.append(name, value);
@@ -655,6 +683,7 @@ class ServiceMetadata {
         where = undefined,
         dateFormat = undefined,
     ) {
+        console.log(getGeometry);
         const baseUrl = this.url;
         const fields = this.fields;
         const queries = await this.queries(getGeometry, epsg, where);
@@ -662,13 +691,25 @@ class ServiceMetadata {
         if (queryCount === 0) {
             return;
         }
+        const format = this.format;
+        let toGeoJson = undefined;
+        switch (format) {
+            case "geojson":
+                toGeoJson = undefined;
+                break;
+            case "json":
+                toGeoJson = jsonQueryToGeoJson;
+                break;
+            default:
+                throw Error("No suitable function for tranforming query result to geoJSON");
+        };
         let queriesComplete = 0;
         let resultObj = {};
         for (const chunk of chunked(queries, batchSize)) {
             const tasks = chunk.map(query => {
                 const url = new URL(`${baseUrl}/query`);
                 url.search = query.toString();
-                return fetchQuery(url)
+                return fetchQuery(url, toGeoJson)
             });
             resultObj = await tasks.reduce(async (previous, nextTask) => {
                 const accum = await previous;
@@ -750,7 +791,6 @@ class ServiceMetadata {
      */
     static async fromBaseUrl(url) {
         const options = new Map([["url", url]]);
-        let incOid = false;
 
         // Get count from service when querying all features
         const count = await countQuery(url);
@@ -767,6 +807,8 @@ class ServiceMetadata {
         if ("error" in metadata) {
             return {};
         }
+        const queryFormats = (metadata.supportedQueryFormats?.split(",")) || ["JSON"];
+        options.set("queryFormats", queryFormats);
         const advancedQuery = metadata.advancedQueryCapabilities || {};
         options.set("serverType", (metadata.type || '').toUpperCase());
         options.set("name", metadata.name || '');
@@ -862,9 +904,10 @@ function parseCoordinates(coordinates) {
  * Fetch query features then map the data to an array
  * @param {URL} url 
  * @param {URLSearchParams} params
+ * @param {(any) => any} toGeoJson
  * @returns {Promise<Object>} nested array of objects representing rows of records
  */
-async function fetchQuery(url) {
+async function fetchQuery(url, toGeoJson=undefined) {
     let invalidResponse = true;
     let tryNumber = 1;
     let json;
@@ -904,5 +947,72 @@ async function fetchQuery(url) {
             throw Error(`Too many tries to fetch query (${url.href})`);
         }
     }
+    if (typeof toGeoJson !== "undefined") {
+        return toGeoJson(json);
+    }
     return json;
+}
+
+/**
+ * 
+ * @param {any} json 
+ * @returns {any}
+ */
+function jsonQueryToGeoJson(json) {
+    const geometryType = json?.geometryType;
+    const epsg = json?.spatialReference?.wkid;
+    const crs = typeof epsg !== "undefined" ? {
+        type: "name",
+        properties: {
+            name: `EPSG:${epsg}`,
+        }
+    } : {};
+    const features = json.features.map((f, i) => {
+        const obj = {
+            type: "Feature",
+            id: i + 1,
+            properties: f.attributes,
+        };
+        if (typeof geometryType !== "undefined") {
+            const geomName = geometryType.replace("esriGeometry", "");
+            switch (geomName) {
+                case "Point":
+                    obj.geometry = {
+                        type: "Point",
+                        coordinates: [
+                            f.geometry?.x,
+                            f.geometry?.y,
+                            f.geometry?.z,
+                        ].filter(c => c),
+                    }
+                    break;
+                case "Multipoint":
+                    obj.geometry = {
+                        type: "Multipoint",
+                        coordinates: f.geometry?.points,
+                    }
+                    break;
+                case "Polyline":
+                    obj.geometry = {
+                        type: "Polyline",
+                        coordinates: f.geometry?.paths,
+                    }
+                    break;
+                case "Polygon":
+                    obj.geometry = {
+                        type: "Polygon",
+                        coordinates: f.geometry?.rings,
+                    }
+                    break;
+                default:
+                    throw Error(`Undefined geometry type, ${geomName}`);
+            }
+        }
+        return obj;
+    });
+    return {
+        type: "FeatureCollection",
+        crs: crs,
+        features: features,
+    };
 }
