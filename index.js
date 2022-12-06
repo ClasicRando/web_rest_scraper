@@ -432,7 +432,7 @@ function maxMinQueryUrlParams(oidField) {
  */
 async function objectIdsQuery(baseUrl, where = "1=1") {
     const response = await fetchJson(`${baseUrl}/query`, idQueryUrlParams(where));
-    return response.ok ? response.payload.objectIds : [-1, -1];
+    return response.ok ? response.payload.objectIds : [];
 }
 
 /**
@@ -445,6 +445,12 @@ async function objectIdsQuery(baseUrl, where = "1=1") {
 async function maxMinQuery(baseUrl, oidField, stats) {
     if (!stats) {
         const objectIds = await objectIdsQuery(baseUrl);
+        if (objectIds.length == 0) {
+            return {
+                "max": -1,
+                "min": -1,
+            }
+        }
         return {
             "max": objectIds[objectIds.length - 1],
             "min": objectIds[0],
