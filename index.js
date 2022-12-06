@@ -646,19 +646,16 @@ class ServiceMetadata {
         if (this.oidField) {
             const queries = [];
             const objectIds = await objectIdsQuery(this.url, where);
-            if (objectIds[0] || -1 != -1) {
-                for (let i = 0; i < objectIds.length; i += objectIdChunkSize) {
-                    const chunk = objectIds.slice(i, i + objectIdChunkSize);
-                    const params = new URLSearchParams({
-                        'objectIds': chunk.join(","),
-                        'outFields': '*',
-                        'f': format
-                    });
-                    for (const [name, value] of Object.entries(geoParams)) {
-                        params.append(name, value);
-                    }
-                    queries.push(params)
+            for (const chunk of chunked(objectIds, objectIdChunkSize)) {
+                const params = new URLSearchParams({
+                    'objectIds': chunk.join(","),
+                    'outFields': '*',
+                    'f': format
+                });
+                for (const [name, value] of Object.entries(geoParams)) {
+                    params.append(name, value);
                 }
+                queries.push(params)
             }
             return queries;
         }
