@@ -84,12 +84,16 @@ for (const [i, dateFormat] of dateFormats.entries()) {
 /**
  * @param {string} where
  */
-function countQueryUrlParams(where) {
-    return new URLSearchParams({
+function countQueryUrlParams(where, cacheHintSupported) {
+    const params = new URLSearchParams({
         "where": where ? where : "1=1",
         "returnCountOnly": "true",
         "f": "json",
     });
+    if (cacheHintSupported) {
+        params.append("cacheHint", false);
+    }
+    return params;
 }
 
 /**
@@ -476,8 +480,8 @@ async function maxMinQuery(baseUrl, oidField, stats) {
  * @param {string} where
  * @returns {Promise<number | string>}
  */
-async function countQuery(baseUrl, where = "1=1") {
-    const response = await fetchJson(`${baseUrl}/query`, countQueryUrlParams(where));
+async function countQuery(baseUrl, where = "1=1", cacheHintSupported = false) {
+    const response = await fetchJson(`${baseUrl}/query`, countQueryUrlParams(where, cacheHintSupported));
     return response.ok && "count" in response.payload
         ? response.payload.count
         : response.error;
@@ -547,6 +551,8 @@ class ServiceMetadata {
         this.sourceSpatialReference = options.get("spatialReference");
         /** @type {Array<string>} */
         this.queryFormats = options.get("queryFormats").map(f => f.toLowerCase());
+        /** @type {boolean} */
+        this.cacheHint = options.get("cacheHint");
     }
 
     /**
@@ -823,10 +829,23 @@ class ServiceMetadata {
         if (Object.keys(advancedQuery).length > 0) {
             options.set("pagination", advancedQuery.supportsPagination || false);
             options.set("stats", advancedQuery.supportsStatistics || false);
+            options.set("cacheHint", advancedQuery.supportsQueryWithCacheHint || false);
         } else {
             options.set("pagination", metadata.supportsPagination || false);
             options.set("stats", metadata.supportsStatistics || false);
+            options.set("cacheHint", metadata.supportsQueryWithCacheHint || false);
         }
+
+        // If the cacheHint flag is true and the sourceCount was zero, try the source count again with cacheHint
+        if ((options.get("cacheHint") || false) && count == 0)
+        {
+            const recount = await countQuery(url, undefined, true);
+            if (typeof (recount) === "string") {
+                return recount;
+            }
+            options.set("sourceCount", recount);
+        }
+
         options.set("geoType", metadata.geometryType || '');
         // Get all field names while filtering out any geometry field or field named SHAPE. Any field
         // that follows those criteria are not required. Could add ability to keep those fields later
