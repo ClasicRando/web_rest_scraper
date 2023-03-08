@@ -898,7 +898,7 @@ function toXY(pointGeometry) {
  * @return {string}
  */
 function toWkt(geometry) {
-    if (!geometry) {
+    if (!geometry || !geometry.coordinates) {
         return "";
     }
     if (geometry.type.toUpperCase() === "POINT") {
