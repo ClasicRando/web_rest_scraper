@@ -710,7 +710,7 @@ class ServiceMetadata {
                 toGeoJson = jsonQueryToGeoJson;
                 break;
             default:
-                throw Error("No suitable function for tranforming query result to geoJSON");
+                throw Error("No suitable function for transforming query result to geoJSON");
         };
         let queriesComplete = 0;
         let resultObj = {};
@@ -721,7 +721,7 @@ class ServiceMetadata {
                 return fetchQuery(url, toGeoJson)
             });
             resultObj = await tasks.reduce(async (previous, nextTask) => {
-                const accum = await previous;
+                const accumulator = await previous;
                 const result = await nextTask;
                 if (typeof (fields.find(field => field.codes)) !== "undefined") {
                     for (const feature of result.features) {
@@ -752,7 +752,7 @@ class ServiceMetadata {
                         return feature.properties;
                     })
                     : result.features.map(feature => JSON.stringify(feature));
-                if (Object.keys(accum).length == 0) {
+                if (Object.keys(accumulator).length == 0) {
                     scrapeProgressBar.style.width = `${Math.round((++queriesComplete / queryCount) * 100)}%`;
                     return {
                         "crs": result.crs,
@@ -760,9 +760,9 @@ class ServiceMetadata {
                         "type": result.type,
                     };
                 }
-                accum.features = [...accum.features, ...featuresMapped];
+                accumulator.features = [...accumulator.features, ...featuresMapped];
                 scrapeProgressBar.style.width = `${Math.round((++queriesComplete / queryCount) * 100)}%`;
-                return accum;
+                return accumulator;
             }, Promise.resolve(resultObj));
         }
         const download = document.createElement("a");
